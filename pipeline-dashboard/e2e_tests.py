@@ -302,6 +302,42 @@ def run_pipeline_tests():
         return True
     test("Dashboard HTML contains auto-refresh logic", check_auto_refresh_html)
 
+    # ── Test 23: Service pipeline scoping — no mixed services per PR ──
+    def check_service_scoping():
+        import re
+        prs = _json(_get(BASE + "/api/prs"))["prs"]
+        multi_service_repos = ["Enablement", "Onboarding", "Infra", "EnvironmentDiscovery", "Nugets"]
+        for pr in prs:
+            repo = pr.get("repo", "")
+            if not any(r in repo for r in multi_service_repos):
+                continue
+            stages = pr.get("stages", {})
+            # Collect service names from pipeline definitions
+            services = set()
+            for key in ["build_pipeline", "dev_pipeline", "stage_pipeline", "prod_pipeline"]:
+                defn = stages.get(key, {}).get("details", {}).get("definition", "")
+                if not defn:
+                    continue
+                # Strip repo prefix and type suffix to get service name
+                svc = defn.replace(repo + "-", "", 1)
+                svc = re.sub(r"-(official|release|buddy|pr)$", "", svc)
+                services.add(svc)
+            if len(services) > 1:
+                raise Exception(
+                    f"PR #{pr['pr_id']} ({repo}) has mixed services: {services}")
+        return True
+    test("Service pipeline scoping — no mixed services per PR", check_service_scoping)
+
+    # ── Test 24: Dashboard has back button to Automation Hub ──
+    def check_back_button():
+        html = _get(BASE + "/dashboard.html").read().decode()
+        if "localhost:8091" not in html:
+            raise Exception("Dashboard missing back link to Automation Hub (port 8091)")
+        if "Back to Automation Hub" not in html:
+            raise Exception("Dashboard missing back button title/tooltip")
+        return True
+    test("Dashboard has back button to Automation Hub", check_back_button)
+
     passed = sum(1 for r in results if r["passed"])
     return {
         "suite": "Pipeline Dashboard",

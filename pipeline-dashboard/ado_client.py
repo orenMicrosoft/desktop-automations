@@ -443,6 +443,39 @@ def _classify_pipeline(definition_name):
     return "other"
 
 
+def _extract_service_name(definition_name, repo_name):
+    """Extract the service sub-name from a pipeline definition.
+
+    Visionaries naming:  'Rome-Visionaries-Enablement-Infra-official'  → 'Infra'
+    SCC naming:          'FE.MSecSCC-Official - aatp'                  → 'aatp'
+    Single-service:      'Rome-Visionaries-Onboarding-official'        → None
+    """
+    name = definition_name
+
+    # --- Visionaries-style suffix-typed names (Repo-Service-type) ---
+    ptype = _classify_pipeline(definition_name)
+    _type_suffixes = {
+        "official": "-official", "release": "-release",
+        "buddy": "-buddy", "pr_build": "-pr",
+    }
+    suffix = _type_suffixes.get(ptype, "")
+    if suffix and name.lower().endswith(suffix):
+        stripped = name[: len(name) - len(suffix)]
+        if stripped.lower().startswith(repo_name.lower()):
+            service = stripped[len(repo_name):].strip("-").strip()
+            if service:
+                return service
+        return None
+
+    # --- SCC-style contains-typed names (Repo-Official - package) ---
+    for marker in ("-Official - ", "-Official- ", "-Official  - ", "-Buddy-", "-Buddy - "):
+        idx = name.find(marker)
+        if idx >= 0:
+            return name[idx + len(marker):].strip()
+
+    return None
+
+
 def compute_stages(pr_data):
     """Compute pipeline stages for a single PR."""
     cfg = _load_config()
@@ -580,6 +613,24 @@ def _compute_pipeline_stages(pr_data, stages, cfg, rcfg=None):
         }
     else:
         stages["build_pipeline"] = {"status": "pending", "url": None}
+
+    # ── Service scoping ──
+    # In multi-service repos (e.g. Enablement has Enablement, Infra, PartnersApi,
+    # GlobalApi services), scope deploy-stage candidates to the same service as the
+    # selected official build so all stages point to the same pipeline chain.
+    build_service = None
+    if official_build:
+        build_service = _extract_service_name(
+            official_build.get("definition", {}).get("name", ""), repo)
+    if build_service:
+        official_builds = [
+            b for b in official_builds
+            if _extract_service_name(b.get("definition", {}).get("name", ""), repo) == build_service
+        ]
+        release_builds = [
+            b for b in release_builds
+            if _extract_service_name(b.get("definition", {}).get("name", ""), repo) == build_service
+        ]
 
     # ── Stage 7: Buddy pipeline (optional, runs on source branch) ──
     buddy_defs = def_map.get("buddy", [])
