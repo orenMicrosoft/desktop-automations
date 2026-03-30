@@ -255,6 +255,53 @@ def run_pipeline_tests():
                         "pipeline name classification may be broken")
     test("FE.MSecSCC deploy stages detected (name-based classification)", check_fe_msecscc_deploy)
 
+    # ── Test 19: No refreshed PRs have empty stages ──
+    def check_no_empty_stages():
+        prs = _json(_get(BASE + "/api/prs"))["prs"]
+        refreshed = [p for p in prs if p.get("last_refreshed")]
+        empty = [p["pr_id"] for p in refreshed
+                 if not p.get("stages") or len(p.get("stages", {})) == 0]
+        if empty:
+            raise Exception(f"Refreshed PRs with empty stages: {empty}")
+        return True
+    test("No refreshed PRs have empty stages", check_no_empty_stages)
+
+    # ── Test 20: All refreshed completed PRs have all 10 stage keys ──
+    def check_all_stage_keys_present():
+        prs = _json(_get(BASE + "/api/prs"))["prs"]
+        refreshed = [p for p in prs if p.get("last_refreshed") and p.get("pr_status") == "completed"]
+        for pr in refreshed:
+            stages = pr.get("stages", {})
+            missing = [k for k in EXPECTED_STAGES if k not in stages]
+            if missing:
+                raise Exception(f"PR #{pr['pr_id']} missing stage keys: {missing}")
+        return True
+    test("All refreshed completed PRs have all 10 stage keys", check_all_stage_keys_present)
+
+    # ── Test 21: SCC PR 14672720 shows prod deployed ──
+    def check_scc_14672720_prod():
+        prs = _json(_get(BASE + "/api/prs"))["prs"]
+        pr = next((p for p in prs if p["pr_id"] == 14672720), None)
+        if not pr:
+            return True  # PR not tracked
+        stages = pr.get("stages", {})
+        prod = stages.get("prod_pipeline", {}).get("status")
+        if prod != "succeeded":
+            raise Exception(f"PR #14672720 prod_pipeline should be 'succeeded', got '{prod}'")
+        return True
+    test("SCC PR #14672720 shows prod deployed", check_scc_14672720_prod)
+
+    # ── Test 22: Dashboard HTML has auto-refresh logic ──
+    def check_auto_refresh_html():
+        html = _get(BASE + "/dashboard.html").read().decode()
+        # The init() function should contain auto-refresh for stale PRs
+        if "Auto-refreshing" not in html:
+            raise Exception("Dashboard missing auto-refresh indicator text")
+        if "last_refreshed" not in html:
+            raise Exception("Dashboard missing stale PR detection logic")
+        return True
+    test("Dashboard HTML contains auto-refresh logic", check_auto_refresh_html)
+
     passed = sum(1 for r in results if r["passed"])
     return {
         "suite": "Pipeline Dashboard",
