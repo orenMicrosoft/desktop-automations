@@ -2,7 +2,7 @@
 
 A collection of local desktop automation tools for Microsoft employees. Each tool runs as a lightweight Python HTTP server with a browser-based dashboard.
 
-> **Owner**: [orenMicrosoft](https://github.com/orenMicrosoft) · Contributions welcome via PR (approved by owner only)
+> **Built by**: [orenMicrosoft](https://github.com/orenMicrosoft) · Shared for everyone at Microsoft to use and customize
 
 ---
 
@@ -144,8 +144,11 @@ Register-ScheduledTask -TaskName "CoreIdentity-AutoExtend" `
 
 ---
 
-## How to Consume
+## How to Use These Automations
 
+These tools are **shared for everyone** — you're welcome to download and use any of them for your personal workflow.
+
+### Option 1: Clone & Use As-Is
 1. **Clone** this repo to your local machine
 2. **Configure** each automation you want to use (see Configuration above)
 3. **Run** via the hub (`python hub/hub_server.py`) or individually
@@ -153,14 +156,22 @@ Register-ScheduledTask -TaskName "CoreIdentity-AutoExtend" `
 
 Each automation is self-contained in its own directory — you can use any subset.
 
+### Option 2: Fork & Customize
+If you want to adapt an automation for your specific needs:
+1. **Fork** this repo to your own GitHub account
+2. **Customize** the code to fit your workflow (different team keywords, thresholds, repos, etc.)
+3. Keep your fork synced for upstream improvements if you like
+
 ---
 
 ## How to Contribute
 
+Contributions are welcome! This repo is primarily for **sharing** useful automations, but if you have improvements or new automations, feel free to open a PR.
+
 ### Contribution Model
-- This repo is **publicly visible** but contributions require **PR approval from the owner**
-- All PRs must be reviewed and approved before merging
-- Direct pushes to `main` are not allowed (except by the owner)
+- PRs are reviewed and approved by the repo owner before merging
+- A `CODEOWNERS` file ensures all changes get the right review
+- Direct pushes to `main` are not allowed
 
 ### Adding a New Automation
 
