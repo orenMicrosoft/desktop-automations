@@ -1,0 +1,1957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Copilot CLI Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --border: #30363d;
+    --text: #e6edf3; --text2: #8b949e; --accent: #58a6ff; --green: #3fb950;
+    --orange: #d29922; --red: #f85149; --purple: #bc8cff; --pink: #f778ba;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+  .header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 20px 32px; display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 24px; font-weight: 600; }
+  .header h1 span { color: var(--accent); }
+  .header .meta { color: var(--text2); font-size: 13px; }
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+  /* KPI Cards */
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
+  .kpi { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
+  .kpi .label { font-size: 12px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .kpi .value { font-size: 28px; font-weight: 700; color: var(--accent); }
+  .kpi .sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+  /* Charts */
+  .charts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 28px; }
+  .chart-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+  .chart-card.full { grid-column: 1 / -1; }
+  .chart-card h3 { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: var(--text); }
+  .chart-card canvas { max-height: 320px; }
+
+  /* Session Table */
+  .table-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 28px; overflow-x: auto; }
+  .table-card h3 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 12px; border-bottom: 2px solid var(--border); color: var(--text2); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; white-space: nowrap; }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: var(--bg3); }
+  tr[data-session-id] { cursor: pointer; }
+  tr[data-session-id]:hover td { background: rgba(88,166,255,0.08); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; margin: 1px 2px; }
+  .badge-blue { background: rgba(88,166,255,0.15); color: var(--accent); }
+  .badge-green { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge-orange { background: rgba(210,153,34,0.15); color: var(--orange); }
+  .badge-red { background: rgba(248,81,73,0.15); color: var(--red); }
+  .badge-purple { background: rgba(188,140,255,0.15); color: var(--purple); }
+  .badge-pink { background: rgba(247,120,186,0.15); color: var(--pink); }
+
+  /* Parallel sessions */
+  .parallel-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+  .parallel-item { background: var(--bg3); border-radius: 6px; padding: 12px; font-size: 13px; }
+  .parallel-item .overlap { color: var(--orange); font-weight: 600; }
+
+  /* Toast notification */
+  .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 8px; font-size: 14px;
+    z-index: 1000; opacity: 0; transform: translateY(10px); transition: all 0.3s; pointer-events: none; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.success { background: rgba(63,185,80,0.9); color: #fff; }
+  .toast.error { background: rgba(248,81,73,0.9); color: #fff; }
+
+  /* Search */
+  .search-box { display: flex; gap: 8px; align-items: center; }
+  .search-box input { flex: 1; padding: 7px 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 13px; }
+  .search-box input:focus { border-color: var(--accent); outline: none; }
+  .search-box button { padding: 7px 14px; background: var(--accent); color: #000; border: none;
+    border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 13px; }
+  .search-box .clear-btn { background: var(--bg3); color: var(--text2); font-weight: normal; }
+
+  /* Smart Resume Results */
+  .smart-results { margin-top: 8px; max-height: 300px; overflow-y: auto; }
+  .smart-result { padding: 8px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px;
+    cursor: pointer; font-size: 12px; transition: .15s; }
+  .smart-result:hover { border-color: var(--accent); background: rgba(88,166,255,0.06); }
+  .smart-result .sr-summary { font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .smart-result .sr-snippet { color: var(--text2); font-size: 11px; line-height: 1.4; }
+  .smart-result .sr-meta { color: var(--text2); font-size: 10px; margin-top: 3px; }
+  .smart-result mark { background: rgba(210,169,34,0.3); color: var(--text); border-radius: 2px; padding: 0 2px; }
+
+  /* E2E Test Modal */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000;
+    display: none; align-items: center; justify-content: center; }
+  .modal-backdrop.show { display: flex; }
+  .modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto; }
+  .modal h2 { font-size: 18px; margin-bottom: 16px; color: var(--accent); }
+  .modal .test-row { display: flex; justify-content: space-between; padding: 6px 0;
+    border-bottom: 1px solid var(--border); font-size: 13px; }
+  .modal .test-row:last-child { border-bottom: none; }
+  .modal .test-pass { color: var(--green); }
+  .modal .test-fail { color: var(--red); }
+  .modal .test-err { font-size: 11px; color: var(--red); margin-left: 16px; }
+  .modal .test-summary { font-size: 15px; font-weight: 600; margin-top: 12px; padding-top: 12px;
+    border-top: 1px solid var(--border); }
+  .modal .close-btn { float: right; background: none; border: none; color: var(--text2); font-size: 20px;
+    cursor: pointer; line-height: 1; }
+  .modal .close-btn:hover { color: var(--text); }
+
+  /* Session Terminal Panel */
+  .session-panel-wrapper { display: flex; flex-direction: column; }
+  .session-panel-wrapper .table-card { transition: max-height .3s; overflow-y: auto; }
+  .session-panel-wrapper.has-terminal .table-card { max-height: 30vh; }
+
+  .terminal-panel { display: none; background: #0c0c0c; border: 1px solid #333; border-radius: 8px;
+    margin-top: 12px; overflow: hidden; }
+  .terminal-panel.open { display: flex; flex-direction: column; min-height: 480px; }
+  .tp-titlebar { display: flex; align-items: center; justify-content: space-between;
+    background: #1a1a2e; padding: 8px 14px; border-bottom: 1px solid #333; flex-shrink: 0; }
+  .tp-titlebar .tp-title { font-size: 13px; color: #89b4fa; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .tp-titlebar .tp-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .tp-titlebar .tp-dot.running { background: #a6e3a1; animation: dot-pulse 2s infinite; }
+  .tp-titlebar .tp-dot.completed { background: #89b4fa; }
+  .tp-titlebar .tp-dot.stopped { background: #f38ba8; }
+  .tp-titlebar .tp-dot.idle { background: #6c7086; }
+  @keyframes dot-pulse { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
+  .tp-controls { display: flex; gap: 8px; align-items: center; font-size: 12px; color: #a6adc8; }
+  .tp-controls .tp-stat strong { color: #cdd6f4; }
+  .tp-controls button { padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600;
+    cursor: pointer; border: 1px solid #45475a; }
+  .tp-controls .tp-btn-stop { background: transparent; color: #f38ba8; border-color: #f38ba8; }
+  .tp-controls .tp-btn-stop:hover { background: rgba(243,139,168,.1); }
+  .tp-controls .tp-btn-terminal { background: transparent; color: #89b4fa; border-color: #89b4fa; }
+  .tp-controls .tp-btn-terminal:hover { background: rgba(137,180,250,.1); }
+  .tp-controls .tp-btn-close { background: none; border: none; color: #6c7086; font-size: 16px; cursor: pointer; padding: 0 4px; }
+  .tp-controls .tp-btn-close:hover { color: #cdd6f4; }
+  .tp-controls label { font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 3px; color: #6c7086; }
+  .tp-controls label input { margin: 0; }
+
+  .tp-output { flex: 1; overflow-y: auto; padding: 12px 16px;
+    font-family: 'Cascadia Code', 'Cascadia Mono', Consolas, 'Courier New', monospace;
+    font-size: 13px; line-height: 1.7; color: #cdd6f4; min-height: 300px; max-height: 55vh;
+    word-break: break-word; }
+  .tp-output .evt-assistant { color: #cdd6f4; white-space: pre-wrap; margin: 4px 0; }
+  .tp-output .evt-delta { color: #cdd6f4; white-space: pre-wrap; }
+  .tp-output .evt-user { color: #89b4fa; padding: 6px 12px; background: rgba(137,180,250,.06);
+    border-left: 3px solid #89b4fa; border-radius: 4px; margin: 8px 0; }
+  .tp-output .evt-tool { color: #cba6f7; font-size: 12px; padding: 2px 0; }
+  .tp-output .evt-tool strong { color: #d2b3ff; }
+  .tp-output .evt-tool-calls { margin: 4px 0; padding: 6px 12px; background: rgba(203,166,247,.04);
+    border-left: 3px solid #6c3fad; border-radius: 4px; }
+  .tp-output .evt-system { color: #6c7086; font-size: 11px; }
+  .tp-output .evt-error { color: #f38ba8; padding: 6px 12px; background: rgba(243,139,168,.06);
+    border-left: 3px solid #f38ba8; border-radius: 4px; margin: 4px 0; }
+  .tp-output .evt-thinking { color: #f9e2af; font-size: 12px; padding: 3px 0; }
+  .tp-output .evt-thinking-active .thinking-spinner { display: inline-block; animation: think-pulse 1.5s ease-in-out infinite; }
+  .tp-output .evt-turn-sep { text-align: center; color: #45475a; font-size: 11px;
+    margin: 10px 0 6px; border-top: 1px solid #1e1e2e; padding-top: 8px; }
+  .tp-output .evt-complete { background: rgba(166,227,161,.06); border-left: 3px solid #a6e3a1;
+    padding: 8px 12px; border-radius: 4px; margin: 8px 0; }
+  .tp-output .evt-complete strong { color: #a6e3a1; }
+  .tp-output .evt-complete-summary { color: #cdd6f4; font-size: 12px; margin-top: 4px; white-space: pre-wrap; line-height: 1.5; }
+  .tp-output .evt-result { text-align: center; color: #89b4fa; font-weight: 600;
+    padding: 10px 0; margin-top: 8px; border-top: 2px solid #313244; font-size: 13px; }
+  .tp-output .evt-raw { color: #585b70; font-size: 11px; padding: 1px 0; }
+
+  .tp-inputbar { display: flex; border-top: 1px solid #333; flex-shrink: 0; }
+  .tp-inputbar input { flex: 1; padding: 10px 16px; background: #11111b; border: none; color: #cdd6f4;
+    font-family: 'Cascadia Code', Consolas, monospace; font-size: 13px; outline: none; }
+  .tp-inputbar input::placeholder { color: #45475a; }
+  .tp-inputbar button { padding: 10px 20px; background: #313244; color: #89b4fa; border: none;
+    font-weight: 600; cursor: pointer; font-size: 13px; }
+  .tp-inputbar button:hover { background: #45475a; }
+
+  .tp-meta-bar { display: flex; gap: 12px; padding: 6px 16px; background: #11111b; border-top: 1px solid #1e1e2e;
+    font-size: 11px; color: #585b70; flex-shrink: 0; flex-wrap: wrap; }
+  .tp-meta-bar strong { color: #a6adc8; }
+
+  /* Launch bar above terminal */
+  .tp-launch { padding: 12px 16px; background: #11111b; display: flex; gap: 10px; align-items: end;
+    border-bottom: 1px solid #1e1e2e; flex-shrink: 0; flex-wrap: wrap; }
+  .tp-launch label { font-size: 11px; color: #6c7086; margin-bottom: 2px; display: block; }
+  .tp-launch textarea { flex: 1; min-width: 200px; padding: 6px 10px; background: #0c0c0c; border: 1px solid #333;
+    border-radius: 4px; color: #cdd6f4; font-family: 'Cascadia Code', Consolas, monospace; font-size: 12px;
+    resize: none; height: 34px; }
+  .tp-launch .tp-launch-toggles { display: flex; gap: 10px; font-size: 11px; color: #a6adc8; align-items: center; }
+  .tp-launch .tp-launch-toggles input { margin: 0 3px 0 0; }
+  .tp-launch button { padding: 7px 14px; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; }
+  .tp-launch .tp-btn-launch { background: #a6e3a1; color: #0c0c0c; }
+  .tp-launch .tp-btn-launch:hover { background: #8fd89a; }
+  .tp-launch .tp-btn-open { background: #89b4fa; color: #0c0c0c; }
+  .tp-launch .tp-btn-open:hover { background: #6fa4f0; }
+
+  #session-row-selected { background: rgba(88,166,255,0.1) !important; }
+
+  /* Session Manager */
+  .mgr-layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; min-height: 500px; }
+  .mgr-sidebar { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .mgr-main { display: flex; flex-direction: column; gap: 12px; }
+  .mgr-sidebar h3 { font-size: 14px; margin-bottom: 12px; color: var(--accent); }
+  .mgr-sidebar label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+  .mgr-sidebar select, .mgr-sidebar input, .mgr-sidebar textarea {
+    width: 100%; padding: 6px 10px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 13px; font-family: inherit; margin-bottom: 10px; }
+  .mgr-sidebar textarea { resize: vertical; min-height: 80px; }
+  .mgr-sidebar .toggle-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
+  .mgr-sidebar .toggle-row input[type=checkbox] { width: auto; margin: 0; }
+  .mgr-btn { width: 100%; padding: 8px; border-radius: 6px; font-size: 13px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--border); margin-bottom: 6px; }
+  .mgr-btn-primary { background: var(--green); color: #000; border-color: var(--green); }
+  .mgr-btn-primary:hover { background: #2ea043; }
+  .mgr-btn-danger { background: var(--bg); color: var(--red); border-color: var(--red); }
+  .mgr-btn-danger:hover { background: rgba(248,81,73,0.1); }
+  .mgr-sessions-list { margin-top: 12px; }
+  .mgr-session-item { padding: 8px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px;
+    cursor: pointer; font-size: 12px; transition: .15s; }
+  .mgr-session-item:hover { border-color: var(--accent); }
+  .mgr-session-item.active { border-color: var(--accent); background: rgba(88,166,255,0.08); }
+  .mgr-session-item .sid { color: var(--text2); font-family: monospace; }
+  .mgr-session-item .status { font-weight: 600; }
+  .mgr-session-item .status.running { color: var(--green); }
+  .mgr-session-item .status.completed { color: var(--accent); }
+  .mgr-session-item .status.error, .mgr-session-item .status.stopped { color: var(--red); }
+  .mgr-output { flex: 1; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    font-family: 'Cascadia Code', Consolas, monospace; font-size: 13px; overflow-y: auto;
+    padding: 16px; max-height: 500px; min-height: 300px; line-height: 1.6; }
+  .mgr-output .evt-assistant, .sp-output .evt-assistant { color: var(--text); white-space: pre-wrap; margin: 4px 0; line-height: 1.5; }
+  .mgr-output .evt-user, .sp-output .evt-user { color: var(--accent); padding: 6px 10px; background: rgba(88,166,255,0.06);
+    border-left: 3px solid var(--accent); border-radius: 4px; margin: 6px 0; }
+  .mgr-output .evt-tool, .sp-output .evt-tool { color: var(--purple); font-size: 12px; padding: 2px 0; }
+  .mgr-output .evt-tool strong, .sp-output .evt-tool strong { color: #d2a8ff; }
+  .mgr-output .evt-tool-calls, .sp-output .evt-tool-calls { margin: 4px 0; padding: 6px 10px; background: rgba(188,140,255,0.05);
+    border-left: 3px solid var(--purple); border-radius: 4px; }
+  .mgr-output .evt-system, .sp-output .evt-system { color: var(--text2); font-size: 11px; }
+  .mgr-output .evt-delta, .sp-output .evt-delta { color: var(--text); white-space: pre-wrap; line-height: 1.5; }
+  .mgr-output .evt-error, .sp-output .evt-error { color: var(--red); padding: 6px 10px; background: rgba(248,81,73,0.08);
+    border-left: 3px solid var(--red); border-radius: 4px; margin: 4px 0; }
+  .mgr-output .evt-thinking, .sp-output .evt-thinking { color: var(--orange); font-size: 12px; padding: 3px 0; }
+  .mgr-output .evt-thinking-active .thinking-spinner, .sp-output .evt-thinking-active .thinking-spinner {
+    display: inline-block; animation: think-pulse 1.5s ease-in-out infinite; }
+  @keyframes think-pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+  .mgr-output .evt-turn-sep, .sp-output .evt-turn-sep { text-align: center; color: var(--text2); font-size: 11px;
+    margin: 8px 0 4px; border-top: 1px solid var(--border); padding-top: 6px; }
+  .mgr-output .evt-complete, .sp-output .evt-complete { background: rgba(63,185,80,0.08); border-left: 3px solid var(--green);
+    padding: 8px 12px; border-radius: 4px; margin: 6px 0; }
+  .mgr-output .evt-complete strong, .sp-output .evt-complete strong { color: var(--green); }
+  .mgr-output .evt-complete-summary, .sp-output .evt-complete-summary { color: var(--text); font-size: 12px;
+    margin-top: 4px; white-space: pre-wrap; line-height: 1.5; }
+  .mgr-output .evt-result, .sp-output .evt-result { text-align: center; color: var(--accent); font-weight: 600;
+    padding: 10px 0; margin-top: 8px; border-top: 2px solid var(--accent); font-size: 13px; }
+  .mgr-input-row { display: flex; gap: 8px; }
+  .mgr-input-row input { flex: 1; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 14px; }
+  .mgr-input-row button { padding: 8px 16px; background: var(--accent); color: #000; border: none;
+    border-radius: 6px; font-weight: 600; cursor: pointer; }
+  .mgr-status-bar { display: flex; gap: 16px; align-items: center; font-size: 12px; color: var(--text2);
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
+  .mgr-status-bar .stat-val { color: var(--text); font-weight: 600; }
+  @media (max-width: 800px) { .mgr-layout { grid-template-columns: 1fr; } }
+
+  /* Tabs */
+  .tab-bar { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+  .tab-btn { background: none; border: none; color: var(--text2); font-size: 14px; padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Quick Launch Cards */
+  .quick-launch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .ql-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 16px;
+    cursor: pointer; transition: all .15s; position: relative; }
+  .ql-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+  .ql-card .ql-name { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .ql-card .ql-path { font-size: 11px; color: var(--text2); font-family: monospace; margin-bottom: 8px; word-break: break-all; }
+  .ql-card .ql-meta { font-size: 11px; color: var(--text2); display: flex; gap: 12px; }
+  .ql-card .ql-meta span { display: flex; align-items: center; gap: 3px; }
+  .ql-card .ql-launch-btn { position: absolute; top: 12px; right: 12px; background: var(--green); color: #000;
+    border: none; border-radius: 6px; padding: 5px 10px; font-size: 11px; font-weight: 600; cursor: pointer; }
+  .ql-card .ql-launch-btn:hover { background: #2ea043; }
+
+  /* Desktop Apps Grid */
+  .apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .app-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 20px;
+    display: flex; flex-direction: column; gap: 10px; transition: all .15s; }
+  .app-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+  .app-card .app-header { display: flex; align-items: center; justify-content: space-between; }
+  .app-card .app-name { font-size: 16px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; }
+  .app-card .app-desc { font-size: 13px; color: var(--text2); line-height: 1.5; }
+  .app-card .app-schedule { font-size: 12px; color: var(--text2); }
+  .app-card .app-footer { display: flex; justify-content: space-between; align-items: center;
+    padding-top: 10px; border-top: 1px solid var(--border); margin-top: auto; }
+  .app-card .app-status-badge { display: inline-block; font-size: 11px; padding: 3px 10px;
+    border-radius: 10px; font-weight: 600; }
+  .app-status-badge.online { background: rgba(63,185,80,0.15); color: var(--green); }
+  .app-status-badge.offline { background: rgba(248,81,73,0.15); color: var(--red); }
+  .app-status-badge.starting { background: rgba(210,153,34,0.15); color: var(--orange); }
+  .app-card .app-open-btn { background: var(--accent); color: #000; border: none; border-radius: 6px;
+    padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .app-card .app-open-btn:hover { opacity: 0.9; }
+
+  /* Filter */
+  .filter-bar { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+  .filter-bar select, .filter-bar input { background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; font-size: 13px; }
+  .filter-bar label { font-size: 13px; color: var(--text2); }
+
+  .refresh-btn { background: var(--accent); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600; }
+  .refresh-btn:hover { opacity: 0.9; }
+
+  @media (max-width: 900px) {
+    .charts-grid { grid-template-columns: 1fr; }
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="display:flex;align-items:center;gap:16px">
+    <a href="http://localhost:8091" title="Back to Automation Hub" style="color:var(--text2);text-decoration:none;font-size:20px;line-height:1">←</a>
+    <div>
+      <h1>🤖 <span>Copilot CLI</span> Usage Dashboard</h1>
+      <div class="meta" id="generated-at"></div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span class="meta" id="refresh-status"></span>
+    <button class="refresh-btn" id="refresh-btn" onclick="refreshData()">↻ Refresh Data</button>
+    <button class="refresh-btn" style="background:var(--purple)" onclick="runE2ETests()">🧪 Run Tests</button>
+  </div>
+</div>
+
+<div class="container">
+  <!-- Tab Navigation -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="quick-launch">🚀 Quick Launch</button>
+    <button class="tab-btn" data-tab="overview">📊 Overview</button>
+    <button class="tab-btn" data-tab="sessions">📋 Sessions</button>
+    <button class="tab-btn" data-tab="categories">🏷️ Categories</button>
+    <button class="tab-btn" data-tab="productivity">⚡ Productivity</button>
+    <button class="tab-btn" data-tab="parallel">🔀 Parallel Sessions</button>
+    <button class="tab-btn" data-tab="manager">🎮 Session Manager</button>
+    <button class="tab-btn" data-tab="apps">🖥️ Apps</button>
+  </div>
+
+  <!-- QUICK LAUNCH TAB (default) -->
+  <div class="tab-content active" id="tab-quick-launch">
+    <h3 style="font-size:16px;margin-bottom:6px;color:var(--accent)">⚡ Start Agentic Copilot Session</h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:16px">Open a new Copilot CLI session in autopilot + allow-all mode. Click a project to launch instantly.</p>
+    <div class="quick-launch-grid" id="ql-grid">
+      <div style="color:var(--text2);font-size:13px">Loading project directories...</div>
+    </div>
+
+    <h3 style="font-size:16px;margin-top:28px;margin-bottom:6px;color:var(--accent)">🆕 Custom Agentic Session</h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:12px">Start a session with a custom prompt and directory.</p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-bottom:24px">
+      <div style="flex:1;min-width:200px">
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Working Directory</label>
+        <input type="text" id="ql-cwd" value="" placeholder="C:\Users\orenhorowitz"
+          style="width:100%;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">
+      </div>
+      <div style="flex:2;min-width:300px">
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">Prompt</label>
+        <input type="text" id="ql-prompt" placeholder="e.g. Fix the failing tests in auth module..."
+          style="width:100%;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px"
+          onkeydown="if(event.key==='Enter')qlCustomLaunch('managed')">
+      </div>
+      <button onclick="qlCustomLaunch('managed')" style="padding:8px 16px;background:var(--green);color:#000;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px;white-space:nowrap">▶ Launch Managed</button>
+      <button onclick="qlCustomLaunch('terminal')" style="padding:8px 16px;background:var(--accent);color:#000;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px;white-space:nowrap">🖥️ Open in Terminal</button>
+    </div>
+
+    <h3 style="font-size:16px;margin-top:28px;margin-bottom:6px;color:var(--accent)">🖥️ Desktop Applications</h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:12px">Your automation apps. Click to open.</p>
+    <div class="apps-grid" id="ql-apps-grid">
+      <div style="color:var(--text2);font-size:13px">Loading apps...</div>
+    </div>
+  </div>
+
+  <!-- OVERVIEW TAB -->
+  <div class="tab-content" id="tab-overview">
+    <div class="kpi-grid" id="kpi-grid"></div>
+    <div class="charts-grid">
+      <div class="chart-card full"><h3>📅 Daily Activity</h3><canvas id="chart-daily"></canvas></div>
+      <div class="chart-card"><h3>🏷️ Usage by Category</h3><canvas id="chart-categories"></canvas></div>
+      <div class="chart-card"><h3>📦 Repos Worked On</h3><canvas id="chart-repos"></canvas></div>
+      <div class="chart-card"><h3>🔄 Compacts per Session</h3><canvas id="chart-compacts"></canvas></div>
+      <div class="chart-card"><h3>✏️ Corrections per Session</h3><canvas id="chart-corrections"></canvas></div>
+    </div>
+  </div>
+
+  <!-- SESSIONS TAB -->
+  <div class="tab-content" id="tab-sessions">
+    <div class="filter-bar">
+      <div class="search-box" style="flex:1">
+        <input type="text" id="session-search" placeholder="🔍 Search sessions by keyword..." onkeydown="if(event.key==='Enter')filterSessionsBySearch()">
+        <button onclick="filterSessionsBySearch()">Search</button>
+        <button class="clear-btn" onclick="clearSessionSearch()">Clear</button>
+      </div>
+      <label>Category:</label>
+      <select id="filter-category"><option value="">All</option></select>
+      <label>Sort:</label>
+      <select id="sort-sessions">
+        <option value="date">Date (newest)</option>
+        <option value="duration">Duration (longest)</option>
+        <option value="turns">Turns (most)</option>
+        <option value="tokens">Tokens (most)</option>
+        <option value="corrections">Corrections (most)</option>
+      </select>
+    </div>
+    <div class="session-panel-wrapper" id="session-panel-wrapper">
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Summary</th>
+              <th>Turns</th>
+              <th>Duration</th>
+              <th>Est. Tokens</th>
+              <th>Compacts</th>
+              <th>Corrections</th>
+              <th>Categories</th>
+            </tr>
+          </thead>
+          <tbody id="session-table-body"></tbody>
+        </table>
+      </div>
+
+      <!-- Full-width Terminal Panel (below table) -->
+      <div class="terminal-panel" id="terminal-panel">
+        <div class="tp-titlebar">
+          <div class="tp-title">
+            <span class="tp-dot idle" id="tp-dot"></span>
+            <span id="tp-session-title">Copilot CLI Session</span>
+          </div>
+          <div class="tp-controls">
+            <span class="tp-stat">Turns: <strong id="tp-turns">0</strong></span>
+            <span class="tp-stat">Tokens: <strong id="tp-tokens">0</strong></span>
+            <span class="tp-stat">Duration: <strong id="tp-duration">—</strong></span>
+            <label title="Show all raw events"><input type="checkbox" id="tp-full-logs" onchange="tpToggleFullLogs()"> Raw</label>
+            <button class="tp-btn-terminal" onclick="tpOpenInTerminal()" title="Also open in Windows Terminal">🖥️ Terminal</button>
+            <button class="tp-btn-stop" id="tp-stop-btn" onclick="tpStopSession()">⏹ Stop</button>
+            <button class="tp-btn-close" onclick="tpClose()" title="Close">&times;</button>
+          </div>
+        </div>
+        <div class="tp-launch" id="tp-launch">
+          <div style="flex:1;min-width:200px">
+            <label>Continuation prompt (optional)</label>
+            <textarea id="tp-prompt" placeholder="Describe what to continue..."></textarea>
+          </div>
+          <div class="tp-launch-toggles">
+            <label><input type="checkbox" id="tp-autopilot" checked> Autopilot</label>
+            <label><input type="checkbox" id="tp-allow-all" checked> Allow All</label>
+            <label><input type="checkbox" id="tp-same-window" checked> Same Window</label>
+          </div>
+          <button class="tp-btn-launch" onclick="tpLaunchManaged()">▶ Launch Managed</button>
+          <button class="tp-btn-open" onclick="tpOpenInTerminal()">🖥️ Open in Terminal</button>
+        </div>
+        <div class="tp-output" id="tp-output">
+          <div class="evt-system" style="padding:20px;text-align:center;color:#45475a">Choose an action above to begin.</div>
+        </div>
+        <div class="tp-inputbar" id="tp-inputbar" style="display:none">
+          <input type="text" id="tp-input" placeholder="Send a message to the session..." onkeydown="if(event.key==='Enter')tpSendInput()">
+          <button onclick="tpSendInput()">Send ➜</button>
+        </div>
+        <div class="tp-meta-bar" id="tp-meta-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CATEGORIES TAB -->
+  <div class="tab-content" id="tab-categories">
+    <div class="charts-grid">
+      <div class="chart-card full"><h3>📊 Category Breakdown Over Time (Weekly)</h3><canvas id="chart-cat-timeline"></canvas></div>
+      <div class="chart-card"><h3>⏱️ Avg Duration by Category</h3><canvas id="chart-cat-duration"></canvas></div>
+      <div class="chart-card"><h3>💬 Avg Turns by Category</h3><canvas id="chart-cat-turns"></canvas></div>
+    </div>
+  </div>
+
+  <!-- PRODUCTIVITY TAB -->
+  <div class="tab-content" id="tab-productivity">
+    <div class="kpi-grid" id="prod-kpi-grid"></div>
+    <div class="charts-grid">
+      <div class="chart-card full"><h3>📈 Token Usage Over Time (Daily)</h3><canvas id="chart-tokens-daily"></canvas></div>
+      <div class="chart-card"><h3>🔄 Compacts & Corrections Trend</h3><canvas id="chart-issues-trend"></canvas></div>
+      <div class="chart-card"><h3>⏱️ Session Duration Distribution</h3><canvas id="chart-duration-dist"></canvas></div>
+    </div>
+  </div>
+
+  <!-- PARALLEL TAB -->
+  <div class="tab-content" id="tab-parallel">
+    <div class="kpi-grid">
+      <div class="kpi"><div class="label">Parallel Overlaps</div><div class="value" id="parallel-count">0</div><div class="sub">sessions running simultaneously</div></div>
+      <div class="kpi"><div class="label">Max Concurrent</div><div class="value" id="max-concurrent">0</div><div class="sub">peak parallelism</div></div>
+    </div>
+    <h3 style="margin:16px 0">Overlapping Session Pairs</h3>
+    <div class="parallel-list" id="parallel-list"></div>
+  </div>
+
+  <!-- SESSION MANAGER TAB -->
+  <div class="tab-content" id="tab-manager">
+    <div class="mgr-layout">
+      <!-- Sidebar: Launch & Active Sessions -->
+      <div class="mgr-sidebar">
+        <h3>🚀 Launch Session</h3>
+        <label>Resume From</label>
+        <select id="mgr-resume-select">
+          <option value="">New session (no resume)</option>
+        </select>
+        <label>Working Directory</label>
+        <input type="text" id="mgr-cwd" placeholder="C:\Users\orenhorowitz">
+        <label>Additional Prompt</label>
+        <textarea id="mgr-prompt" placeholder="Enter your prompt here..."></textarea>
+        <div class="toggle-row"><input type="checkbox" id="mgr-autopilot" checked> <label>🤖 Autopilot</label></div>
+        <div class="toggle-row"><input type="checkbox" id="mgr-allow-all" checked> <label>🔓 Allow All</label></div>
+        <div class="toggle-row"><input type="checkbox" id="mgr-same-window" checked> <label>🪟 Same Window</label></div>
+        <button class="mgr-btn mgr-btn-primary" onclick="mgrStartSession()">▶ Launch</button>
+
+        <h3 style="margin-top:16px">🔍 Smart Resume</h3>
+        <label>Describe what you want to continue</label>
+        <div class="search-box" style="margin-bottom:6px">
+          <input type="text" id="mgr-smart-search" placeholder="e.g. fix auth in onboarding..." onkeydown="if(event.key==='Enter')smartSearch()">
+          <button onclick="smartSearch()">Find</button>
+        </div>
+        <div id="mgr-smart-results" class="smart-results"></div>
+
+        <h3 style="margin-top:16px">Active Sessions</h3>
+        <div id="mgr-sessions-list" class="mgr-sessions-list">
+          <div style="color:var(--text2); font-size:12px;">No active sessions</div>
+        </div>
+      </div>
+
+      <!-- Main: Output & Input -->
+      <div class="mgr-main">
+        <div class="mgr-status-bar" id="mgr-status-bar">
+          <span>Status: <span class="stat-val" id="mgr-st-status">—</span></span>
+          <span>Turns: <span class="stat-val" id="mgr-st-turns">0</span></span>
+          <span>Tokens: <span class="stat-val" id="mgr-st-tokens">0</span></span>
+          <span>Duration: <span class="stat-val" id="mgr-st-duration">—</span></span>
+          <span style="flex:1"></span>
+          <button class="mgr-btn-danger" style="width:auto;padding:4px 12px;margin:0" onclick="mgrStopSession()">⏹ Stop</button>
+        </div>
+        <div class="mgr-output" id="mgr-output">
+          <div class="evt-system">Select or launch a session to begin.</div>
+        </div>
+        <div class="mgr-input-row">
+          <input type="text" id="mgr-input" placeholder="Send a message to the running session..." onkeydown="if(event.key==='Enter')mgrSendInput()">
+          <button onclick="mgrSendInput()">Send ➜</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- E2E Test Modal -->
+<div class="modal-backdrop" id="e2e-modal">
+  <div class="modal">
+    <button class="close-btn" onclick="closeE2EModal()">&times;</button>
+    <h2>🧪 E2E Test Results</h2>
+    <div id="e2e-results">
+      <div style="color:var(--text2);text-align:center;padding:24px;">Running tests... this may take a minute.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const CATEGORY_COLORS = {
+  'PR Review': '#58a6ff', 'ADO Tasks': '#d29922', 'Multi-Repo': '#bc8cff',
+  'Online Search': '#f778ba', 'Code Implementation': '#3fb950', 'Debugging': '#f85149',
+  'Testing': '#79c0ff', 'Automation': '#d2a8ff', 'Learning/Education': '#ffa657',
+  'Documentation': '#7ee787', 'DevOps/Deploy': '#ff7b72', 'File Processing': '#a5d6ff',
+  'General Utility': '#8b949e'
+};
+const BADGE_CLASSES = {
+  'PR Review': 'badge-blue', 'ADO Tasks': 'badge-orange', 'Multi-Repo': 'badge-purple',
+  'Online Search': 'badge-pink', 'Code Implementation': 'badge-green', 'Debugging': 'badge-red',
+  'Testing': 'badge-blue', 'Automation': 'badge-purple', 'Learning/Education': 'badge-orange',
+  'Documentation': 'badge-green', 'DevOps/Deploy': 'badge-red', 'File Processing': 'badge-blue',
+  'General Utility': 'badge-blue'
+};
+
+let DATA = null;
+
+async function loadData() {
+  const resp = await fetch('dashboard-data.json');
+  DATA = await resp.json();
+  render();
+}
+
+function fmt(n) { return n != null ? n.toLocaleString() : '0'; }
+function fmtDuration(mins) {
+  if (!mins || mins <= 0) return '—';
+  if (mins < 60) return `${Math.round(mins)}m`;
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function render() {
+  const s = DATA.summary;
+  document.getElementById('generated-at').textContent = `Last updated: ${new Date(s.generated_at).toLocaleString()}`;
+
+  // KPIs
+  const kpis = [
+    { label: 'Total Sessions', value: s.total_sessions, sub: `${s.active_sessions} active` },
+    { label: 'Total Turns', value: fmt(s.total_turns), sub: `${s.avg_turns_per_session} avg/session` },
+    { label: 'Est. Tokens Used', value: fmt(s.total_estimated_tokens), sub: '~4 chars/token' },
+    { label: 'Avg Duration', value: fmtDuration(s.avg_duration_minutes), sub: `median ${fmtDuration(s.median_duration_minutes)}` },
+    { label: 'Compacts', value: s.total_compacts, sub: `${s.compact_rate_per_session}/session avg` },
+    { label: 'Corrections', value: s.total_corrections, sub: `${s.correction_rate_per_session}/session avg` },
+    { label: 'Parallel Overlaps', value: s.parallel_session_events, sub: 'concurrent sessions' },
+    { label: 'Days Active', value: s.days_active, sub: `${s.sessions_per_active_day} sessions/day` },
+  ];
+  document.getElementById('kpi-grid').innerHTML = kpis.map(k =>
+    `<div class="kpi"><div class="label">${k.label}</div><div class="value">${k.value}</div><div class="sub">${k.sub}</div></div>`
+  ).join('');
+
+  renderDailyChart();
+  renderCategoriesChart();
+  renderReposChart();
+  renderCompactsChart();
+  renderCorrectionsChart();
+  renderSessionTable();
+  renderCategoryTimeline();
+  renderCatDuration();
+  renderCatTurns();
+  renderProductivity();
+  renderParallel();
+}
+
+function chartOpts(extra = {}) {
+  return {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#8b949e', font: { size: 11 } } } },
+    scales: {
+      x: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { color: '#21262d' } },
+      y: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { color: '#21262d' } },
+      ...extra
+    }
+  };
+}
+
+function renderDailyChart() {
+  const days = Object.keys(DATA.daily_stats).sort();
+  getOrCreateChart('chart-daily', {
+    type: 'bar',
+    data: {
+      labels: days.map(d => d.slice(5)),
+      datasets: [
+        { label: 'Sessions', data: days.map(d => DATA.daily_stats[d].sessions), backgroundColor: '#58a6ff', borderRadius: 4, order: 2 },
+        { label: 'Turns', data: days.map(d => DATA.daily_stats[d].turns), type: 'line', borderColor: '#3fb950', pointBackgroundColor: '#3fb950', tension: 0.3, yAxisID: 'y1', order: 1 }
+      ]
+    },
+    options: { ...chartOpts({ y1: { position: 'right', ticks: { color: '#8b949e' }, grid: { display: false } } }) }
+  });
+}
+
+function renderCategoriesChart() {
+  const cats = Object.entries(DATA.category_totals).sort((a, b) => b[1] - a[1]);
+  getOrCreateChart('chart-categories', {
+    type: 'doughnut',
+    data: {
+      labels: cats.map(c => c[0]),
+      datasets: [{ data: cats.map(c => c[1]), backgroundColor: cats.map(c => CATEGORY_COLORS[c[0]] || '#8b949e'), borderWidth: 0 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#8b949e', font: { size: 11 }, padding: 8 } } } }
+  });
+}
+
+function renderReposChart() {
+  const repos = Object.entries(DATA.repos).sort((a, b) => b[1] - a[1]);
+  getOrCreateChart('chart-repos', {
+    type: 'bar',
+    data: {
+      labels: repos.map(r => r[0].replace('Rome-Visionaries-', 'V-')),
+      datasets: [{ data: repos.map(r => r[1]), backgroundColor: '#bc8cff', borderRadius: 4 }]
+    },
+    options: { ...chartOpts(), indexAxis: 'y', plugins: { legend: { display: false } } }
+  });
+}
+
+function renderCompactsChart() {
+  const sessions = DATA.sessions.filter(s => (s.total_turns || 0) > 0).slice(0, 20);
+  getOrCreateChart('chart-compacts', {
+    type: 'bar',
+    data: {
+      labels: sessions.map(s => (s.summary || s.id.slice(0, 8)).slice(0, 20)),
+      datasets: [{ data: sessions.map(s => s.compact_count), backgroundColor: sessions.map(s => s.compact_count > 2 ? '#f85149' : s.compact_count > 0 ? '#d29922' : '#3fb950'), borderRadius: 4 }]
+    },
+    options: { ...chartOpts(), indexAxis: 'y', plugins: { legend: { display: false } } }
+  });
+}
+
+function renderCorrectionsChart() {
+  const sessions = DATA.sessions.filter(s => (s.total_turns || 0) > 0).slice(0, 20);
+  getOrCreateChart('chart-corrections', {
+    type: 'bar',
+    data: {
+      labels: sessions.map(s => (s.summary || s.id.slice(0, 8)).slice(0, 20)),
+      datasets: [{ data: sessions.map(s => s.correction_count), backgroundColor: sessions.map(s => s.correction_count > 2 ? '#f85149' : s.correction_count > 0 ? '#d29922' : '#3fb950'), borderRadius: 4 }]
+    },
+    options: { ...chartOpts(), indexAxis: 'y', plugins: { legend: { display: false } } }
+  });
+}
+
+function renderSessionTable(filterCat = '', sortBy = 'date') {
+  let sessions = DATA.sessions.filter(s => (s.total_turns || 0) > 0);
+  if (filterCat) sessions = sessions.filter(s => s.categories && s.categories.includes(filterCat));
+  const sorters = {
+    date: (a, b) => (b.created_at || '').localeCompare(a.created_at || ''),
+    duration: (a, b) => (b.duration_minutes || 0) - (a.duration_minutes || 0),
+    turns: (a, b) => (b.total_turns || 0) - (a.total_turns || 0),
+    tokens: (a, b) => (b.estimated_tokens_total || 0) - (a.estimated_tokens_total || 0),
+    corrections: (a, b) => (b.correction_count || 0) - (a.correction_count || 0),
+  };
+  sessions.sort(sorters[sortBy] || sorters.date);
+
+  const tbody = document.getElementById('session-table-body');
+  tbody.innerHTML = sessions.map(s => {
+    const cats = (s.categories || []).map(c => `<span class="badge ${BADGE_CLASSES[c] || 'badge-blue'}">${c}</span>`).join(' ');
+    const date = s.created_at ? new Date(s.created_at).toLocaleDateString() : '—';
+    const cwd = (s.cwd || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+    return `<tr data-session-id="${s.id}" data-cwd="${cwd}" data-summary="${(s.summary || '').replace(/"/g,'&quot;')}" title="Click to open side panel · Double-click for quick resume" style="cursor:pointer">
+      <td>${date}</td>
+      <td title="${s.id}">${s.summary || s.id.slice(0, 12)}</td>
+      <td>${s.total_turns || 0}</td>
+      <td>${fmtDuration(s.duration_minutes)}</td>
+      <td>${fmt(s.estimated_tokens_total)}</td>
+      <td>${s.compact_count}</td>
+      <td>${s.correction_count}</td>
+      <td>${cats}</td>
+    </tr>`;
+  }).join('');
+
+  // Single-click to open terminal panel
+  tbody.querySelectorAll('tr[data-session-id]').forEach(tr => {
+    const sid = tr.dataset.sessionId;
+    const sessionData = sessions.find(s => s.id === sid);
+    tr.addEventListener('click', () => {
+      openTerminalPanel(sid, tr.dataset.cwd, tr.dataset.summary, sessionData);
+    });
+    // Double-click for quick resume in terminal
+    tr.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      resumeSession(sid, tr.dataset.cwd);
+    });
+  });
+
+  // Populate category filter
+  const allCats = [...new Set(DATA.sessions.flatMap(s => s.categories || []))].sort();
+  const sel = document.getElementById('filter-category');
+  if (sel.options.length <= 1) {
+    allCats.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+  }
+}
+
+function renderCategoryTimeline() {
+  const weeks = Object.keys(DATA.weekly_stats).sort();
+  const allCats = [...new Set(Object.values(DATA.weekly_stats).flatMap(w => Object.keys(w.categories)))];
+  getOrCreateChart('chart-cat-timeline', {
+    type: 'bar',
+    data: {
+      labels: weeks.map(w => w.slice(5)),
+      datasets: allCats.map(cat => ({
+        label: cat,
+        data: weeks.map(w => (DATA.weekly_stats[w].categories[cat] || 0)),
+        backgroundColor: CATEGORY_COLORS[cat] || '#8b949e',
+        borderRadius: 2
+      }))
+    },
+    options: { ...chartOpts(), plugins: { legend: { labels: { color: '#8b949e', font: { size: 10 } } } }, scales: { x: { stacked: true, ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }, y: { stacked: true, ticks: { color: '#8b949e' }, grid: { color: '#21262d' } } } }
+  });
+}
+
+function renderCatDuration() {
+  const catDurations = {};
+  DATA.sessions.filter(s => s.duration_minutes > 0).forEach(s => {
+    (s.categories || []).forEach(c => {
+      if (!catDurations[c]) catDurations[c] = [];
+      catDurations[c].push(s.duration_minutes);
+    });
+  });
+  const cats = Object.entries(catDurations).map(([c, ds]) => [c, ds.reduce((a, b) => a + b, 0) / ds.length]).sort((a, b) => b[1] - a[1]);
+  const ctx = document.getElementById('chart-cat-duration').getContext('2d');
+  getOrCreateChart('chart-cat-duration', {
+    type: 'bar',
+    data: {
+      labels: cats.map(c => c[0]),
+      datasets: [{ data: cats.map(c => Math.round(c[1])), backgroundColor: cats.map(c => CATEGORY_COLORS[c[0]] || '#8b949e'), borderRadius: 4 }]
+    },
+    options: { ...chartOpts(), indexAxis: 'y', plugins: { legend: { display: false } } }
+  });
+}
+
+function renderCatTurns() {
+  const catTurns = {};
+  DATA.sessions.filter(s => (s.total_turns || 0) > 0).forEach(s => {
+    (s.categories || []).forEach(c => {
+      if (!catTurns[c]) catTurns[c] = [];
+      catTurns[c].push(s.total_turns);
+    });
+  });
+  const cats = Object.entries(catTurns).map(([c, ts]) => [c, ts.reduce((a, b) => a + b, 0) / ts.length]).sort((a, b) => b[1] - a[1]);
+  const ctx = document.getElementById('chart-cat-turns').getContext('2d');
+  getOrCreateChart('chart-cat-turns', {
+    type: 'bar',
+    data: {
+      labels: cats.map(c => c[0]),
+      datasets: [{ data: cats.map(c => Math.round(c[1])), backgroundColor: cats.map(c => CATEGORY_COLORS[c[0]] || '#8b949e'), borderRadius: 4 }]
+    },
+    options: { ...chartOpts(), indexAxis: 'y', plugins: { legend: { display: false } } }
+  });
+}
+
+function renderProductivity() {
+  const s = DATA.summary;
+  const activeSessions = DATA.sessions.filter(s => (s.total_turns || 0) > 0);
+  const tokensPerTurn = s.total_turns > 0 ? Math.round(s.total_estimated_tokens / s.total_turns) : 0;
+  const sessionsWithCompacts = activeSessions.filter(s => s.compact_count > 0).length;
+  const sessionsWithCorrections = activeSessions.filter(s => s.correction_count > 0).length;
+  const autonomyRate = activeSessions.length > 0 ? Math.round((1 - sessionsWithCorrections / activeSessions.length) * 100) : 0;
+
+  const kpis = [
+    { label: 'Tokens per Turn', value: fmt(tokensPerTurn), sub: 'avg input+output' },
+    { label: 'Sessions Needing Compacts', value: `${sessionsWithCompacts}/${activeSessions.length}`, sub: `${Math.round(sessionsWithCompacts/Math.max(activeSessions.length,1)*100)}% of sessions` },
+    { label: 'Sessions w/ Corrections', value: `${sessionsWithCorrections}/${activeSessions.length}`, sub: `${Math.round(sessionsWithCorrections/Math.max(activeSessions.length,1)*100)}% of sessions` },
+    { label: 'Autonomy Rate', value: `${autonomyRate}%`, sub: 'sessions without corrections' },
+  ];
+  document.getElementById('prod-kpi-grid').innerHTML = kpis.map(k =>
+    `<div class="kpi"><div class="label">${k.label}</div><div class="value">${k.value}</div><div class="sub">${k.sub}</div></div>`
+  ).join('');
+
+  // Token usage daily
+  const days = Object.keys(DATA.daily_stats).sort();
+  const ctx1 = document.getElementById('chart-tokens-daily').getContext('2d');
+  getOrCreateChart('chart-tokens-daily', {
+    type: 'line',
+    data: {
+      labels: days.map(d => d.slice(5)),
+      datasets: [
+        { label: 'User Tokens (est.)', data: days.map(d => Math.round((DATA.daily_stats[d].user_chars || 0) / 4)), borderColor: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.1)', fill: true, tension: 0.3 },
+        { label: 'Assistant Tokens (est.)', data: days.map(d => Math.round((DATA.daily_stats[d].assistant_chars || 0) / 4)), borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.1)', fill: true, tension: 0.3 }
+      ]
+    },
+    options: chartOpts()
+  });
+
+  // Compacts & corrections trend
+  const dayCompacts = {};
+  const dayCorrections = {};
+  DATA.sessions.forEach(s => {
+    const day = (s.created_at || '').slice(0, 10);
+    if (day) {
+      dayCompacts[day] = (dayCompacts[day] || 0) + (s.compact_count || 0);
+      dayCorrections[day] = (dayCorrections[day] || 0) + (s.correction_count || 0);
+    }
+  });
+  const ctx2 = document.getElementById('chart-issues-trend').getContext('2d');
+  getOrCreateChart('chart-issues-trend', {
+    type: 'bar',
+    data: {
+      labels: days.map(d => d.slice(5)),
+      datasets: [
+        { label: 'Compacts', data: days.map(d => dayCompacts[d] || 0), backgroundColor: '#d29922', borderRadius: 3 },
+        { label: 'Corrections', data: days.map(d => dayCorrections[d] || 0), backgroundColor: '#f85149', borderRadius: 3 }
+      ]
+    },
+    options: chartOpts()
+  });
+
+  // Duration distribution
+  const durations = activeSessions.map(s => s.duration_minutes).filter(d => d > 0);
+  const buckets = ['<5m', '5-15m', '15-60m', '1-4h', '4h+'];
+  const bucketCounts = [0, 0, 0, 0, 0];
+  durations.forEach(d => {
+    if (d < 5) bucketCounts[0]++;
+    else if (d < 15) bucketCounts[1]++;
+    else if (d < 60) bucketCounts[2]++;
+    else if (d < 240) bucketCounts[3]++;
+    else bucketCounts[4]++;
+  });
+  const ctx3 = document.getElementById('chart-duration-dist').getContext('2d');
+  getOrCreateChart('chart-duration-dist', {
+    type: 'bar',
+    data: {
+      labels: buckets,
+      datasets: [{ data: bucketCounts, backgroundColor: ['#3fb950', '#58a6ff', '#d29922', '#bc8cff', '#f85149'], borderRadius: 4 }]
+    },
+    options: { ...chartOpts(), plugins: { legend: { display: false } } }
+  });
+}
+
+function renderParallel() {
+  const parallel = DATA.parallel_sessions || [];
+  document.getElementById('parallel-count').textContent = parallel.length;
+
+  // Estimate max concurrency from overlaps
+  const dateGroups = {};
+  parallel.forEach(p => {
+    if (!dateGroups[p.date]) dateGroups[p.date] = 0;
+    dateGroups[p.date]++;
+  });
+  const maxConcurrent = Math.max(0, ...Object.values(dateGroups));
+  document.getElementById('max-concurrent').textContent = maxConcurrent > 0 ? maxConcurrent : parallel.length > 0 ? 2 : 0;
+
+  const list = document.getElementById('parallel-list');
+  if (parallel.length === 0) {
+    list.innerHTML = '<p style="color:var(--text2)">No parallel sessions detected.</p>';
+    return;
+  }
+  list.innerHTML = parallel.slice(0, 30).map(p =>
+    `<div class="parallel-item">
+      <div><strong>${p.session_a}</strong></div>
+      <div style="color:var(--text2);font-size:12px">↕ overlapped with</div>
+      <div><strong>${p.session_b}</strong></div>
+      <div class="overlap">${fmtDuration(p.overlap_minutes)} overlap</div>
+      <div style="color:var(--text2);font-size:11px">${p.date}</div>
+    </div>`
+  ).join('');
+}
+
+// Tab switching
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// Filters
+document.getElementById('filter-category').addEventListener('change', e => {
+  renderSessionTable(e.target.value, document.getElementById('sort-sessions').value);
+});
+document.getElementById('sort-sessions').addEventListener('change', e => {
+  renderSessionTable(document.getElementById('filter-category').value, e.target.value);
+});
+
+// Track chart instances for cleanup on re-render
+const chartInstances = {};
+
+function getOrCreateChart(canvasId, config) {
+  if (chartInstances[canvasId]) {
+    chartInstances[canvasId].destroy();
+  }
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  chartInstances[canvasId] = new Chart(ctx, config);
+  return chartInstances[canvasId];
+}
+
+// Refresh: collect fresh data from server, then reload the JSON
+async function refreshData() {
+  const btn = document.getElementById('refresh-btn');
+  const status = document.getElementById('refresh-status');
+  btn.disabled = true;
+  btn.textContent = '⏳ Refreshing...';
+  status.textContent = 'Collecting latest data...';
+  try {
+    const resp = await fetch('/api/refresh', { method: 'POST' });
+    const result = await resp.json();
+    if (result.ok) {
+      status.textContent = '✓ Data refreshed';
+      // Reload the JSON data and re-render (no page reload needed)
+      await loadData();
+      btn.disabled = false;
+      btn.textContent = '↻ Refresh Data';
+      setTimeout(() => { status.textContent = ''; }, 2000);
+    } else {
+      status.textContent = '⚠️ Refresh failed';
+      btn.disabled = false;
+      btn.textContent = '↻ Refresh Data';
+    }
+  } catch (e) {
+    // Server not running — just load existing JSON
+    status.textContent = '';
+    btn.disabled = false;
+    btn.textContent = '↻ Refresh Data';
+    await loadData();
+  }
+}
+
+// Resume a session in a new terminal
+async function resumeSession(sessionId, cwd, prompt, autopilot, allowAll, sameWindow) {
+  // Default to autopilot + allow-all + same-window if not explicitly passed
+  if (autopilot === undefined) autopilot = true;
+  if (allowAll === undefined) allowAll = true;
+  if (sameWindow === undefined) sameWindow = true;
+  showToast('⏳ Opening session…', 'success');
+  try {
+    const body = { session_id: sessionId, cwd: cwd, autopilot: !!autopilot, allow_all: !!allowAll, same_window: !!sameWindow };
+    if (prompt) body.prompt = prompt;
+    const resp = await fetch('/api/resume-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      showToast('✅ ' + result.message, 'success');
+    } else {
+      showToast('❌ ' + (result.message || 'Failed'), 'error');
+    }
+  } catch (e) {
+    showToast('❌ Server not reachable', 'error');
+  }
+}
+
+function showToast(msg, type) {
+  let toast = document.getElementById('toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toast';
+    toast.className = 'toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.className = 'toast ' + type + ' show';
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => { toast.classList.remove('show'); }, 3000);
+}
+
+// On page load: try to refresh data, then render
+(async function init() {
+  const status = document.getElementById('refresh-status');
+  const btn = document.getElementById('refresh-btn');
+  try {
+    status.textContent = 'Loading fresh data...';
+    btn.disabled = true;
+    const resp = await fetch('/api/refresh', { method: 'POST' });
+    const result = await resp.json();
+    status.textContent = '';
+    btn.disabled = false;
+  } catch {
+    // Server not running or no refresh API — just load static JSON
+    status.textContent = '';
+    btn.disabled = false;
+  }
+  await loadData();
+  mgrPopulateResume();
+})();
+
+// ============================================================
+// SESSION MANAGER
+// ============================================================
+let mgrActiveId = null;
+let mgrEventSource = null;
+let mgrPollTimer = null;
+
+function mgrPopulateResume() {
+  const sel = document.getElementById('mgr-resume-select');
+  sel.innerHTML = '<option value="">New session (no resume)</option>';
+  if (typeof DATA === 'undefined' || !DATA) return;
+  const sessions = DATA.sessions || [];
+  const sorted = [...sessions].sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
+  sorted.slice(0, 50).forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    const label = s.summary ? s.summary.substring(0, 60) : s.id.substring(0, 16);
+    const dir = s.cwd ? (' — ' + s.cwd.split(/[/\\]/).pop()) : '';
+    opt.textContent = `${label}${dir}`;
+    opt.title = s.id;
+    opt.dataset.cwd = s.cwd || '';
+    sel.appendChild(opt);
+  });
+  // Auto-fill CWD when selecting a session
+  sel.onchange = () => {
+    const selected = sel.options[sel.selectedIndex];
+    if (selected && selected.dataset.cwd) {
+      document.getElementById('mgr-cwd').value = selected.dataset.cwd;
+    }
+  };
+}
+
+async function mgrStartSession() {
+  const resumeId = document.getElementById('mgr-resume-select').value;
+  const cwd = document.getElementById('mgr-cwd').value.trim();
+  const prompt = document.getElementById('mgr-prompt').value.trim();
+  const autopilot = document.getElementById('mgr-autopilot').checked;
+  const allowAll = document.getElementById('mgr-allow-all').checked;
+
+  if (!prompt && !resumeId) {
+    showToast('Enter a prompt or select a session to resume', 'error');
+    return;
+  }
+
+  try {
+    const body = { prompt: prompt || undefined, resume_id: resumeId || undefined,
+                   cwd: cwd || undefined, autopilot, allow_all: allowAll };
+    const resp = await fetch('/api/managed-session/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      showToast('✅ Session started: ' + result.managed_id, 'success');
+      mgrSelectSession(result.managed_id);
+      mgrRefreshList();
+    } else {
+      showToast('❌ ' + (result.message || 'Failed to start'), 'error');
+    }
+  } catch (e) {
+    showToast('❌ Server not reachable', 'error');
+  }
+}
+
+function mgrSelectSession(id) {
+  // Disconnect from previous session
+  if (mgrEventSource) { mgrEventSource.close(); mgrEventSource = null; }
+  mgrActiveId = id;
+
+  // Highlight in list
+  document.querySelectorAll('.mgr-session-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.id === id);
+  });
+
+  // Clear output
+  const output = document.getElementById('mgr-output');
+  output.innerHTML = '<div class="evt-system">Connecting to session ' + id.substring(0, 8) + '...</div>';
+
+  // Start SSE
+  mgrEventSource = new EventSource('/api/managed-session/' + id + '/stream');
+  mgrEventSource.onmessage = (e) => {
+    try {
+      const evt = JSON.parse(e.data);
+      mgrRenderEvent(evt, output);
+    } catch {}
+  };
+  mgrEventSource.onerror = () => {
+    // SSE disconnected — session may have ended
+    mgrUpdateStatus('completed');
+  };
+
+  // Start polling status
+  if (mgrPollTimer) clearInterval(mgrPollTimer);
+  mgrPollTimer = setInterval(() => mgrRefreshStatus(id), 2000);
+  mgrRefreshStatus(id);
+}
+
+function mgrRenderEvent(evt, output) {
+  const type = evt.type || '';
+  const data = evt.data || {};
+
+  if (type === 'assistant.message_delta') {
+    // Streaming response text
+    let block = output.querySelector('.evt-delta-active');
+    if (!block) {
+      block = document.createElement('div');
+      block.className = 'evt-delta evt-delta-active evt-assistant';
+      output.appendChild(block);
+    }
+    const content = data.deltaContent || '';
+    if (content) block.textContent += content;
+
+  } else if (type === 'assistant.reasoning_delta') {
+    // Thinking indicator — collapse into one line
+    let indicator = output.querySelector('.evt-thinking-active');
+    if (!indicator) {
+      indicator = document.createElement('div');
+      indicator.className = 'evt-thinking evt-thinking-active';
+      indicator.innerHTML = '<span class="thinking-spinner">🧠</span> Thinking...';
+      output.appendChild(indicator);
+    }
+
+  } else if (type === 'assistant.reasoning') {
+    // Thinking complete — update indicator
+    let indicator = output.querySelector('.evt-thinking-active');
+    if (indicator) {
+      indicator.classList.remove('evt-thinking-active');
+      indicator.innerHTML = '🧠 <span style="color:var(--text2)">Thought complete</span>';
+    }
+
+  } else if (type === 'assistant.message') {
+    // Finalize any streaming delta block
+    let block = output.querySelector('.evt-delta-active');
+    if (block) block.classList.remove('evt-delta-active');
+
+    // Show the actual response content if present
+    const content = (data.content || '').trim();
+    if (content) {
+      // If there was no streaming delta, render the full message
+      if (!block || !block.textContent.trim()) {
+        const div = document.createElement('div');
+        div.className = 'evt-assistant';
+        div.textContent = content;
+        output.appendChild(div);
+      }
+    }
+
+    // Show tool calls being made
+    const tools = data.toolRequests || [];
+    if (tools.length > 0) {
+      const toolDiv = document.createElement('div');
+      toolDiv.className = 'evt-tool-calls';
+      tools.forEach(tr => {
+        const name = tr.name || '?';
+        const args = tr.arguments || {};
+        const desc = args.description || args.intent || args.summary || args.query || args.pattern || '';
+        const line = document.createElement('div');
+        line.className = 'evt-tool';
+        line.innerHTML = '🔧 <strong>' + name + '</strong>' + (desc ? ' — ' + _escHtml(desc).substring(0, 80) : '');
+        toolDiv.appendChild(line);
+      });
+      output.appendChild(toolDiv);
+    }
+
+    // Token count
+    const tokens = data.outputTokens;
+    if (tokens) {
+      const info = document.createElement('div');
+      info.className = 'evt-system';
+      info.textContent = '[' + tokens + ' tokens]';
+      output.appendChild(info);
+    }
+
+  } else if (type === 'assistant.turn_start') {
+    const turnId = data.turnId != null ? data.turnId : '?';
+    const div = document.createElement('div');
+    div.className = 'evt-turn-sep';
+    div.innerHTML = '<span>── Turn ' + turnId + ' ──</span>';
+    output.appendChild(div);
+
+  } else if (type === 'user.message') {
+    const div = document.createElement('div');
+    div.className = 'evt-user';
+    // Use content (not transformedContent which has system XML)
+    const content = data.content || '';
+    div.textContent = '▶ ' + content.substring(0, 500);
+    output.appendChild(div);
+
+  } else if (type === 'user.input_sent') {
+    const div = document.createElement('div');
+    div.className = 'evt-user';
+    div.textContent = '▶ ' + (data.content || '');
+    output.appendChild(div);
+
+  } else if (type === 'tool.execution_start') {
+    const div = document.createElement('div');
+    div.className = 'evt-tool';
+    const name = data.toolName || '?';
+    const args = data.arguments || {};
+    const desc = args.description || args.command || args.path || args.pattern || '';
+    div.innerHTML = '⏳ <strong>' + _escHtml(name) + '</strong>' + (desc ? ': ' + _escHtml(String(desc)).substring(0, 100) : '');
+    div.dataset.toolCallId = data.toolCallId || '';
+    output.appendChild(div);
+
+  } else if (type === 'tool.execution_complete') {
+    // Find the matching start and update it
+    const callId = data.toolCallId || '';
+    const startDiv = callId ? output.querySelector('[data-tool-call-id="' + callId + '"]') : null;
+    if (startDiv) {
+      const success = data.success !== false;
+      startDiv.innerHTML = startDiv.innerHTML.replace('⏳', success ? '✅' : '❌');
+    }
+
+  } else if (type === 'session.task_complete') {
+    const div = document.createElement('div');
+    div.className = 'evt-complete';
+    const summary = data.summary || 'Task complete';
+    div.innerHTML = '🏁 <strong>Task Complete</strong><div class="evt-complete-summary">' + _escHtml(summary) + '</div>';
+    output.appendChild(div);
+
+  } else if (type === 'result') {
+    const div = document.createElement('div');
+    div.className = 'evt-result';
+    const usage = data.usage || {};
+    const dur = data.sessionDurationMs;
+    const changes = data.codeChanges || [];
+    const parts = [];
+    if (usage.premiumRequests != null) parts.push('Premium: ' + usage.premiumRequests);
+    if (dur) parts.push('Duration: ' + (dur / 1000).toFixed(1) + 's');
+    if (changes.length) parts.push('Files changed: ' + changes.length);
+    div.innerHTML = '═══ Session Complete ═══' + (parts.length ? '<br>' + parts.join(' · ') : '');
+    output.appendChild(div);
+
+  } else if (type === 'error') {
+    const div = document.createElement('div');
+    div.className = 'evt-error';
+    div.textContent = '❌ ' + (data.message || data.content || 'Error');
+    output.appendChild(div);
+
+  } else if (type === 'session.mcp_servers_loaded' || type === 'session.tools_updated' ||
+             type === 'session.mcp_server_status_changed' || type === 'stderr' ||
+             type === 'assistant.turn_end' || type === 'session.info') {
+    // Skip noisy/internal events
+  }
+  // else: unknown types are silently ignored
+
+  output.scrollTop = output.scrollHeight;
+}
+
+function _escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function mgrRefreshStatus(id) {
+  try {
+    const resp = await fetch('/api/managed-session/' + id + '/status');
+    const data = await resp.json();
+    if (data.ok) {
+      document.getElementById('mgr-st-status').textContent = data.status;
+      document.getElementById('mgr-st-status').className = 'stat-val';
+      document.getElementById('mgr-st-turns').textContent = data.turn_count || 0;
+      document.getElementById('mgr-st-tokens').textContent = data.total_output_tokens || 0;
+      const dur = data.elapsed_seconds;
+      document.getElementById('mgr-st-duration').textContent = dur != null ? formatDuration(dur) : '—';
+      mgrUpdateStatus(data.status);
+      // If session ended, stop polling
+      if (data.status === 'completed' || data.status === 'error' || data.status === 'stopped') {
+        if (mgrPollTimer) { clearInterval(mgrPollTimer); mgrPollTimer = null; }
+        mgrRefreshList();
+      }
+    }
+  } catch {}
+}
+
+function mgrUpdateStatus(status) {
+  const el = document.getElementById('mgr-st-status');
+  el.textContent = status;
+  el.className = 'stat-val';
+}
+
+function formatDuration(secs) {
+  if (secs < 60) return secs.toFixed(0) + 's';
+  if (secs < 3600) return Math.floor(secs / 60) + 'm ' + (secs % 60).toFixed(0) + 's';
+  return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
+}
+
+async function mgrSendInput() {
+  if (!mgrActiveId) { showToast('No active session', 'error'); return; }
+  const input = document.getElementById('mgr-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  try {
+    const resp = await fetch('/api/managed-session/' + mgrActiveId + '/input', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg })
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      input.value = '';
+      // Show what was sent
+      const output = document.getElementById('mgr-output');
+      const div = document.createElement('div');
+      div.className = 'evt-user';
+      div.textContent = '> ' + msg;
+      output.appendChild(div);
+      output.scrollTop = output.scrollHeight;
+    } else {
+      showToast('❌ ' + (result.message || 'Failed'), 'error');
+    }
+  } catch (e) {
+    showToast('❌ Server not reachable', 'error');
+  }
+}
+
+async function mgrStopSession() {
+  if (!mgrActiveId) { showToast('No active session', 'error'); return; }
+  try {
+    const resp = await fetch('/api/managed-session/' + mgrActiveId + '/stop', { method: 'POST' });
+    const result = await resp.json();
+    if (result.ok) {
+      showToast('✅ Session stopped', 'success');
+      mgrRefreshList();
+    } else {
+      showToast('❌ ' + (result.message || 'Failed'), 'error');
+    }
+  } catch (e) {
+    showToast('❌ Server not reachable', 'error');
+  }
+}
+
+async function mgrRefreshList() {
+  const container = document.getElementById('mgr-sessions-list');
+  try {
+    const resp = await fetch('/api/managed-sessions');
+    const data = await resp.json();
+    if (!data.sessions || data.sessions.length === 0) {
+      container.innerHTML = '<div style="color:var(--text2); font-size:12px;">No active sessions</div>';
+      return;
+    }
+    container.innerHTML = '';
+    data.sessions.forEach(s => {
+      const div = document.createElement('div');
+      div.className = 'mgr-session-item' + (s.id === mgrActiveId ? ' active' : '');
+      div.dataset.id = s.id;
+      div.innerHTML = `<div class="sid">${s.id.substring(0, 8)}</div>
+        <div>Status: <span class="status ${s.status}">${s.status}</span></div>
+        <div>Turns: ${s.turn_count || 0} | Tokens: ${s.total_output_tokens || 0}</div>`;
+      div.onclick = () => mgrSelectSession(s.id);
+      container.appendChild(div);
+    });
+  } catch {
+    container.innerHTML = '<div style="color:var(--text2); font-size:12px;">Cannot reach server</div>';
+  }
+}
+
+// Poll managed sessions list periodically
+setInterval(mgrRefreshList, 5000);
+
+// ============================================================
+// SESSION SEARCH (Sessions tab)
+// ============================================================
+let _searchFilter = '';
+
+function filterSessionsBySearch() {
+  _searchFilter = (document.getElementById('session-search').value || '').trim().toLowerCase();
+  renderSessionTable(
+    document.getElementById('filter-category').value,
+    document.getElementById('sort-sessions').value
+  );
+}
+
+function clearSessionSearch() {
+  document.getElementById('session-search').value = '';
+  _searchFilter = '';
+  renderSessionTable(
+    document.getElementById('filter-category').value,
+    document.getElementById('sort-sessions').value
+  );
+}
+
+// Patch renderSessionTable to support search filtering
+const _origRenderSessionTable = renderSessionTable;
+renderSessionTable = function(filterCat, sortBy) {
+  // Call original render first
+  _origRenderSessionTable(filterCat, sortBy);
+  // Then apply search filter if active
+  if (_searchFilter) {
+    const words = _searchFilter.split(/\s+/);
+    const rows = document.querySelectorAll('#session-table-body tr');
+    rows.forEach(row => {
+      const text = row.textContent.toLowerCase();
+      const match = words.every(w => text.includes(w));
+      row.style.display = match ? '' : 'none';
+    });
+  }
+};
+
+// ============================================================
+// TERMINAL PANEL (full-width inline session monitor in Sessions tab)
+// ============================================================
+let tpActiveId = null;
+let tpEventSource = null;
+let tpPollTimer = null;
+let tpSelectedSessionId = null;
+let tpSelectedCwd = null;
+let tpFullLogs = false;
+let tpResponseBuffer = '';  // accumulate streamed assistant.message_delta
+let tpDeltaEl = null;       // current streaming element
+let tpStartTime = null;
+let tpDurationTimer = null;
+
+function openTerminalPanel(sessionId, cwd, summary, sessionData) {
+  tpSelectedSessionId = sessionId;
+  tpSelectedCwd = cwd || '';
+
+  // Highlight selected row
+  document.querySelectorAll('#session-table-body tr').forEach(r => r.removeAttribute('id'));
+  const row = document.querySelector(`#session-table-body tr[data-session-id="${sessionId}"]`);
+  if (row) row.id = 'session-row-selected';
+
+  // Open terminal panel
+  const wrapper = document.getElementById('session-panel-wrapper');
+  const panel = document.getElementById('terminal-panel');
+  wrapper.classList.add('has-terminal');
+  panel.classList.add('open');
+
+  // Set title
+  const title = (summary || sessionId.substring(0, 20)).substring(0, 60);
+  document.getElementById('tp-session-title').textContent = title;
+
+  // Meta bar
+  const meta = [];
+  if (cwd) meta.push('<strong>Dir:</strong> ' + cwd.replace(/</g, '&lt;'));
+  if (sessionData) {
+    if (sessionData.branch) meta.push('<strong>Branch:</strong> ' + sessionData.branch);
+    if (sessionData.total_turns) meta.push('<strong>Turns:</strong> ' + sessionData.total_turns);
+    if (sessionData.duration_minutes) meta.push('<strong>Duration:</strong> ' + fmtDuration(sessionData.duration_minutes));
+    if (sessionData.categories && sessionData.categories.length) meta.push('<strong>Categories:</strong> ' + sessionData.categories.join(', '));
+  }
+  meta.push('<strong>ID:</strong> <span style="font-family:monospace;font-size:10px">' + sessionId + '</span>');
+  document.getElementById('tp-meta-bar').innerHTML = meta.join(' &nbsp;|&nbsp; ');
+
+  // Reset state
+  document.getElementById('tp-prompt').value = '';
+  document.getElementById('tp-output').innerHTML = '<div class="evt-system" style="padding:20px;text-align:center;color:#45475a">Choose an action above to begin.</div>';
+  document.getElementById('tp-inputbar').style.display = 'none';
+  document.getElementById('tp-launch').style.display = '';
+  document.getElementById('tp-stop-btn').style.display = 'none';
+  tpSetDot('idle');
+  tpSetTurns(0); tpSetTokens(0); tpSetDuration('—');
+
+  // Disconnect any previous session
+  tpDisconnect();
+}
+
+function tpClose() {
+  const wrapper = document.getElementById('session-panel-wrapper');
+  const panel = document.getElementById('terminal-panel');
+  wrapper.classList.remove('has-terminal');
+  panel.classList.remove('open');
+  document.querySelectorAll('#session-table-body tr').forEach(r => r.removeAttribute('id'));
+  tpDisconnect();
+  tpSelectedSessionId = null;
+}
+
+function tpDisconnect() {
+  if (tpEventSource) { tpEventSource.close(); tpEventSource = null; }
+  if (tpPollTimer) { clearInterval(tpPollTimer); tpPollTimer = null; }
+  if (tpDurationTimer) { clearInterval(tpDurationTimer); tpDurationTimer = null; }
+  tpActiveId = null;
+}
+
+function tpSetDot(status) {
+  const dot = document.getElementById('tp-dot');
+  dot.className = 'tp-dot ' + status;
+}
+function tpSetTurns(n) { document.getElementById('tp-turns').textContent = n; }
+function tpSetTokens(n) { document.getElementById('tp-tokens').textContent = fmt(n); }
+function tpSetDuration(text) { document.getElementById('tp-duration').textContent = text; }
+
+function tpUpdateDuration() {
+  if (!tpStartTime) return;
+  const elapsed = Math.floor((Date.now() - tpStartTime) / 1000);
+  const m = Math.floor(elapsed / 60);
+  const s = elapsed % 60;
+  tpSetDuration(m > 0 ? `${m}m ${s}s` : `${s}s`);
+}
+
+async function tpLaunchManaged() {
+  if (!tpSelectedSessionId) { showToast('No session selected', 'error'); return; }
+
+  const prompt = document.getElementById('tp-prompt').value.trim();
+  const autopilot = document.getElementById('tp-autopilot').checked;
+  const allowAll = document.getElementById('tp-allow-all').checked;
+
+  try {
+    const body = {
+      resume_id: tpSelectedSessionId,
+      cwd: tpSelectedCwd || undefined,
+      prompt: prompt || undefined,
+      autopilot, allow_all: allowAll
+    };
+    const resp = await fetch('/api/managed-session/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      tpActiveId = result.managed_id;
+      showToast('Session launched: ' + tpActiveId.substring(0, 8), 'success');
+      document.getElementById('tp-launch').style.display = 'none';
+      document.getElementById('tp-inputbar').style.display = '';
+      document.getElementById('tp-stop-btn').style.display = '';
+      document.getElementById('tp-output').innerHTML = '';
+      tpSetDot('running');
+      tpResponseBuffer = '';
+      tpDeltaEl = null;
+      tpStartTime = Date.now();
+      tpDurationTimer = setInterval(tpUpdateDuration, 1000);
+
+      // Start SSE
+      tpEventSource = new EventSource('/api/managed-session/' + tpActiveId + '/stream');
+      tpEventSource.onmessage = (e) => {
+        try {
+          const evt = JSON.parse(e.data);
+          tpRenderEvent(evt);
+        } catch {}
+      };
+      tpEventSource.onerror = () => { tpOnFinished('completed'); };
+
+      // Poll status
+      tpPollTimer = setInterval(() => tpRefreshStatus(), 2000);
+    } else {
+      showToast('Failed: ' + (result.message || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    showToast('Server not reachable', 'error');
+  }
+}
+
+function tpOpenInTerminal() {
+  if (!tpSelectedSessionId) { showToast('No session selected', 'error'); return; }
+  const prompt = document.getElementById('tp-prompt').value.trim();
+  const autopilot = document.getElementById('tp-autopilot').checked;
+  const allowAll = document.getElementById('tp-allow-all').checked;
+  const sameWindow = document.getElementById('tp-same-window').checked;
+  resumeSession(tpSelectedSessionId, tpSelectedCwd, prompt, autopilot, allowAll, sameWindow);
+}
+
+function tpRenderEvent(evt) {
+  const output = document.getElementById('tp-output');
+  const type = evt.type;
+
+  // Full Logs mode: show everything raw
+  if (tpFullLogs) {
+    const div = document.createElement('div');
+    div.className = 'evt-raw';
+    div.textContent = JSON.stringify(evt);
+    output.appendChild(div);
+    output.scrollTop = output.scrollHeight;
+  }
+
+  // -- Thinking --
+  if (type === 'assistant.reasoning_delta') {
+    let thinkEl = output.querySelector('.evt-thinking-active');
+    if (!thinkEl) {
+      thinkEl = document.createElement('div');
+      thinkEl.className = 'evt-thinking evt-thinking-active';
+      thinkEl.innerHTML = '<span class="thinking-spinner">🧠</span> Thinking...';
+      output.appendChild(thinkEl);
+    }
+    output.scrollTop = output.scrollHeight;
+    return;
+  }
+  if (type === 'assistant.reasoning') {
+    const thinkEl = output.querySelector('.evt-thinking-active');
+    if (thinkEl) {
+      thinkEl.classList.remove('evt-thinking-active');
+      thinkEl.innerHTML = '🧠 Thought complete';
+    }
+    return;
+  }
+
+  // -- Streaming response text --
+  if (type === 'assistant.message_delta') {
+    if (!tpDeltaEl) {
+      tpDeltaEl = document.createElement('div');
+      tpDeltaEl.className = 'evt-delta';
+      output.appendChild(tpDeltaEl);
+    }
+    tpResponseBuffer += (evt.data?.deltaContent || '');
+    tpDeltaEl.textContent = tpResponseBuffer;
+    output.scrollTop = output.scrollHeight;
+    return;
+  }
+
+  // -- Full message (end of response) --
+  if (type === 'assistant.message') {
+    // Finalize streamed content
+    if (tpDeltaEl) {
+      tpDeltaEl.className = 'evt-assistant';
+      const content = evt.data?.content || tpResponseBuffer;
+      tpDeltaEl.textContent = content;
+      tpDeltaEl = null;
+      tpResponseBuffer = '';
+    } else if (evt.data?.content) {
+      const div = document.createElement('div');
+      div.className = 'evt-assistant';
+      div.textContent = evt.data.content;
+      output.appendChild(div);
+    }
+    // Show tool calls
+    if (evt.data?.toolRequests && evt.data.toolRequests.length > 0) {
+      const tc = document.createElement('div');
+      tc.className = 'evt-tool-calls';
+      tc.innerHTML = evt.data.toolRequests.map(t => {
+        const desc = t.arguments?.description || t.name || 'tool';
+        return `<div class="evt-tool">🔧 <strong>${t.name}</strong>: ${desc}</div>`;
+      }).join('');
+      output.appendChild(tc);
+    }
+    output.scrollTop = output.scrollHeight;
+    return;
+  }
+
+  // -- Turn boundaries --
+  if (type === 'assistant.turn_start') {
+    tpResponseBuffer = '';
+    tpDeltaEl = null;
+    const div = document.createElement('div');
+    div.className = 'evt-turn-sep';
+    div.textContent = `── Turn ${evt.data?.turnId ?? ''} ──`;
+    output.appendChild(div);
+    output.scrollTop = output.scrollHeight;
+    return;
+  }
+  if (type === 'assistant.turn_end') return;
+
+  // -- User message --
+  if (type === 'user.message') {
+    const div = document.createElement('div');
+    div.className = 'evt-user';
+    div.textContent = '> ' + (evt.data?.content || '(message)');
+    output.appendChild(div);
+    output.scrollTop = output.scrollHeight;
+    return;
+  }
+
+  // -- Tool execution --
+  if (type === 'tool.execution_start') {
+    const div = document.createElement('div');
+    div.className = 'evt-tool';
+    const name = evt.data?.toolName || 'tool';
+    const desc = evt.data?.arguments?.description || '';
+    div.innerHTML = `⏳ <strong>${name}</strong>${desc ? ': ' + desc : ''}`;
+    div.dataset.toolCallId = evt.data?.toolCallId || '';
+    output.appendChild(div);
+    output.scrollTop = output.scrollHeight;
+    return;
+  }
+  if (type === 'tool.execution_complete') {
+    const callId = evt.data?.toolCallId || '';
+    if (callId) {
+      const startEl = output.querySelector(`[data-tool-call-id="${callId}"]`);
+      if (startEl) {
+        startEl.innerHTML = startEl.innerHTML.replace('⏳', evt.data?.success ? '✅' : '❌');
+      }
+    }
+    return;
+  }
+
+  // -- Task complete --
+  if (type === 'session.task_complete') {
+    const div = document.createElement('div');
+    div.className = 'evt-complete';
+    div.innerHTML = '<strong>🏁 Task Complete</strong>';
+    if (evt.data?.summary) {
+      const sum = document.createElement('div');
+      sum.className = 'evt-complete-summary';
+      sum.textContent = evt.data.summary;
+      div.appendChild(sum);
+    }
+    output.appendChild(div);
+    output.scrollTop = output.scrollHeight;
+    return;
+  }
+
+  // -- Result --
+  if (type === 'result') {
+    const div = document.createElement('div');
+    div.className = 'evt-result';
+    const usage = evt.data?.usage;
+    div.textContent = '═══ Session Complete ═══' + (usage ? ` (${usage.premiumRequests || 0} premium requests)` : '');
+    output.appendChild(div);
+    output.scrollTop = output.scrollHeight;
+    return;
+  }
+
+  // -- Errors --
+  if (type === 'session.error' || type === 'error') {
+    const div = document.createElement('div');
+    div.className = 'evt-error';
+    div.textContent = '⚠️ ' + (evt.data?.message || evt.data?.error || JSON.stringify(evt.data));
+    output.appendChild(div);
+    output.scrollTop = output.scrollHeight;
+    return;
+  }
+
+  // -- Session info --
+  if (type === 'session.info') {
+    // Only show model info
+    if (evt.data?.infoType === 'model') {
+      const div = document.createElement('div');
+      div.className = 'evt-system';
+      div.textContent = 'Model: ' + (evt.data.message || '');
+      output.appendChild(div);
+    }
+    return;
+  }
+
+  // All other events: show in raw mode only (already handled above)
+}
+
+function tpToggleFullLogs() {
+  tpFullLogs = document.getElementById('tp-full-logs').checked;
+}
+
+async function tpRefreshStatus() {
+  if (!tpActiveId) return;
+  try {
+    const resp = await fetch('/api/managed-session/' + tpActiveId + '/status');
+    const data = await resp.json();
+    if (data.ok) {
+      tpSetTurns(data.turn_count || 0);
+      tpSetTokens(data.total_output_tokens || 0);
+      const status = data.status;
+      if (status === 'completed' || status === 'error' || status === 'stopped') {
+        tpOnFinished(status);
+      }
+    }
+  } catch {}
+}
+
+function tpOnFinished(status) {
+  tpSetDot(status === 'completed' ? 'completed' : 'stopped');
+  if (tpPollTimer) { clearInterval(tpPollTimer); tpPollTimer = null; }
+  if (tpDurationTimer) { clearInterval(tpDurationTimer); tpDurationTimer = null; }
+  document.getElementById('tp-launch').style.display = '';
+  document.getElementById('tp-stop-btn').style.display = 'none';
+  document.getElementById('tp-inputbar').style.display = 'none';
+}
+
+async function tpSendInput() {
+  if (!tpActiveId) { showToast('No active session', 'error'); return; }
+  const input = document.getElementById('tp-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  try {
+    const resp = await fetch('/api/managed-session/' + tpActiveId + '/input', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg })
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      input.value = '';
+      const output = document.getElementById('tp-output');
+      const div = document.createElement('div');
+      div.className = 'evt-user';
+      div.textContent = '> ' + msg;
+      output.appendChild(div);
+      output.scrollTop = output.scrollHeight;
+    } else {
+      showToast('Failed: ' + (result.message || ''), 'error');
+    }
+  } catch (e) {
+    showToast('Server not reachable', 'error');
+  }
+}
+
+async function tpStopSession() {
+  if (!tpActiveId) return;
+  try {
+    const resp = await fetch('/api/managed-session/' + tpActiveId + '/stop', { method: 'POST' });
+    const result = await resp.json();
+    if (result.ok) {
+      showToast('Session stopped', 'success');
+      tpOnFinished('stopped');
+    }
+  } catch (e) {
+    showToast('Server not reachable', 'error');
+  }
+}
+
+// ============================================================
+// SMART RESUME (Session Manager)
+// ============================================================
+async function smartSearch() {
+  const query = document.getElementById('mgr-smart-search').value.trim();
+  if (!query) { showToast('Enter a search query', 'error'); return; }
+
+  const container = document.getElementById('mgr-smart-results');
+  container.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Searching...</div>';
+
+  try {
+    const resp = await fetch('/api/search-sessions?q=' + encodeURIComponent(query) + '&limit=10');
+    const data = await resp.json();
+    const results = data.results || [];
+
+    if (results.length === 0) {
+      container.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">No sessions found.</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    results.forEach(r => {
+      const div = document.createElement('div');
+      div.className = 'smart-result';
+      const date = r.created_at ? new Date(r.created_at).toLocaleDateString() : '';
+      const repo = r.repository ? r.repository.split('/').pop() : '';
+      const dir = r.cwd ? r.cwd.split(/[/\\]/).pop() : '';
+      const meta = [date, repo, dir, r.branch].filter(Boolean).join(' · ');
+
+      // Highlight matching words in snippet
+      let snippet = (r.snippet || '').replace(/</g, '&lt;');
+      query.split(/\s+/).forEach(w => {
+        if (w.length >= 2) {
+          const re = new RegExp('(' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+          snippet = snippet.replace(re, '<mark>$1</mark>');
+        }
+      });
+
+      div.innerHTML = `
+        <div class="sr-summary">${(r.summary || r.id.substring(0, 16)).replace(/</g, '&lt;')}</div>
+        <div class="sr-snippet">${snippet}</div>
+        <div class="sr-meta">${meta} · ${r.match_source}</div>`;
+
+      div.onclick = () => smartResume(r, query);
+      container.appendChild(div);
+    });
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--red);font-size:12px;padding:8px;">Search failed: ' + e.message + '</div>';
+  }
+}
+
+function smartResume(session, originalQuery) {
+  // Pre-fill the Session Manager form for quick resume
+  document.getElementById('mgr-cwd').value = session.cwd || '';
+
+  // Set the resume dropdown to this session (add temporary option if needed)
+  const sel = document.getElementById('mgr-resume-select');
+  let found = false;
+  for (let opt of sel.options) {
+    if (opt.value === session.id) { sel.value = session.id; found = true; break; }
+  }
+  if (!found) {
+    const opt = document.createElement('option');
+    opt.value = session.id;
+    opt.textContent = (session.summary || session.id.substring(0, 16)) + ' (search result)';
+    opt.dataset.cwd = session.cwd || '';
+    sel.appendChild(opt);
+    sel.value = session.id;
+  }
+
+  // Generate a continuation prompt
+  document.getElementById('mgr-prompt').value = `Continue working on: ${originalQuery}`;
+
+  // Ensure autopilot + allow-all are checked
+  document.getElementById('mgr-autopilot').checked = true;
+  document.getElementById('mgr-allow-all').checked = true;
+
+  showToast('Session selected — click Launch to resume', 'success');
+}
+
+// ============================================================
+// E2E TEST RUNNER
+// ============================================================
+async function runE2ETests() {
+  const modal = document.getElementById('e2e-modal');
+  const resultsDiv = document.getElementById('e2e-results');
+  modal.classList.add('show');
+  resultsDiv.innerHTML = '<div style="color:var(--text2);text-align:center;padding:24px;">⏳ Running tests... this may take a few minutes.</div>';
+
+  try {
+    const resp = await fetch('/api/e2e-tests', { method: 'POST' });
+    const report = await resp.json();
+    renderE2EResults(report);
+  } catch (e) {
+    resultsDiv.innerHTML = '<div style="color:var(--red);text-align:center;padding:24px;">Failed to run tests: ' + e.message + '</div>';
+  }
+}
+
+function renderE2EResults(report) {
+  const resultsDiv = document.getElementById('e2e-results');
+  let html = '';
+  (report.results || []).forEach(r => {
+    const icon = r.passed ? '✅' : '❌';
+    const cls = r.passed ? 'test-pass' : 'test-fail';
+    html += `<div class="test-row"><span class="${cls}">${icon} ${r.name}</span>`;
+    if (r.error) html += `<span class="test-err">${r.error}</span>`;
+    html += '</div>';
+  });
+  const color = report.failed === 0 ? 'var(--green)' : 'var(--red)';
+  html += `<div class="test-summary" style="color:${color}">${report.passed}/${report.total} tests passed</div>`;
+  resultsDiv.innerHTML = html;
+}
+
+function closeE2EModal() {
+  document.getElementById('e2e-modal').classList.remove('show');
+}
+
+// Close modal on backdrop click
+document.getElementById('e2e-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeE2EModal();
+});
+</script>
+</body>
+</html>

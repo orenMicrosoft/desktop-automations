@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline Dashboard — My Automations</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   Catppuccin Mocha tokens
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  --bg:       #1e1e2e; --base:     #1e1e2e;
+  --surface:  #313244; --surface1: #45475a; --overlay: #45475a;
+  --text:     #cdd6f4; --muted:    #6c7086; --subtext: #a6adc8;
+  --blue:     #89b4fa; --green:    #a6e3a1; --red:     #f38ba8;
+  --yellow:   #f9e2af; --mauve:    #cba6f7; --teal:    #94e2d5;
+  --peach:    #fab387; --pink:     #f5c2e7; --sky:     #89dceb;
+  --lavender: #b4befe; --flamingo: #f2cdcd; --rosewater:#f5e0dc;
+  --crust:    #11111b; --mantle:   #181825;
+  --dot-completed:    var(--green);
+  --dot-succeeded:    var(--green);
+  --dot-in_progress:  var(--blue);
+  --dot-pending:      #585b70;
+  --dot-failed:       var(--red);
+  --dot-rejected:     var(--red);
+  --dot-waiting_approval: var(--yellow);
+  --dot-not_triggered:#45475a;
+  --dot-not_applicable:#45475a;
+  --dot-abandoned:    var(--muted);
+  --dot-unknown:      var(--muted);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; }
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg); color: var(--text);
+  min-height: 100vh; display: flex; flex-direction: column;
+}
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+input, select { font-family: inherit; font-size: inherit; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--mantle); }
+::-webkit-scrollbar-thumb { background: var(--surface1); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ═══════════════════════════════════════════════════════════════
+   Layout
+   ═══════════════════════════════════════════════════════════════ */
+.header {
+  background: var(--mantle); border-bottom: 1px solid var(--surface);
+  padding: 12px 24px; display: flex; align-items: center; gap: 16px;
+  position: sticky; top: 0; z-index: 100;
+}
+.header-title { font-size: 1.4rem; font-weight: 600; white-space: nowrap; }
+.header-title span { color: var(--mauve); }
+.header-actions { display: flex; gap: 8px; margin-left: auto; align-items: center; }
+
+.toolbar {
+  padding: 10px 24px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  background: var(--base); border-bottom: 1px solid var(--surface);
+}
+.search-box {
+  background: var(--surface); border: 1px solid var(--surface1); border-radius: 6px;
+  padding: 6px 12px; color: var(--text); width: 280px; outline: none;
+  transition: border-color .15s;
+}
+.search-box:focus { border-color: var(--blue); }
+.search-box::placeholder { color: var(--muted); }
+.filter-select {
+  background: var(--surface); border: 1px solid var(--surface1); border-radius: 6px;
+  padding: 6px 10px; color: var(--text); outline: none; cursor: pointer;
+}
+.filter-select:focus { border-color: var(--blue); }
+.scan-indicator {
+  font-size: .8rem; color: var(--muted); display: none; align-items: center; gap: 4px;
+}
+.scan-indicator.visible { display: inline-flex; }
+
+.main { flex: 1; padding: 16px 24px 80px; }
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 6px; font-size: .85rem; font-weight: 500;
+  transition: background .15s, opacity .15s;
+}
+.btn-primary { background: var(--blue); color: var(--crust); }
+.btn-primary:hover { opacity: .85; }
+.btn-secondary { background: var(--surface); color: var(--subtext); border: 1px solid var(--surface1); }
+.btn-secondary:hover { background: var(--surface1); }
+.btn-icon {
+  width: 28px; height: 28px; border-radius: 6px; display: inline-flex;
+  align-items: center; justify-content: center; font-size: .95rem;
+  transition: background .15s;
+}
+.btn-icon:hover { background: var(--surface1); }
+
+/* ═══════════════════════════════════════════════════════════════
+   PR Grid
+   ═══════════════════════════════════════════════════════════════ */
+.pr-list { display: flex; flex-direction: column; gap: 2px; }
+.pr-row {
+  display: grid;
+  grid-template-columns: 80px minmax(160px, auto) 60px 1fr 260px auto 70px;
+  align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 8px;
+  background: var(--surface); cursor: pointer;
+  transition: background .12s;
+  min-height: 44px;
+}
+.pr-row:hover { background: var(--surface1); }
+.pr-row.expanded { background: var(--surface1); border-radius: 8px 8px 0 0; }
+.pr-row.archived-row {
+  opacity: .45; filter: grayscale(.4);
+}
+
+/* Repo badge */
+.repo-badge {
+  font-size: .88rem; font-weight: 600; padding: 4px 10px; border-radius: 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-align: center; letter-spacing: .02em;
+}
+/* PR number */
+.pr-num { font-size: .95rem; color: var(--blue); font-weight: 600; }
+.pr-num a { color: var(--subtext); }
+.pr-num a:hover { color: var(--blue); }
+/* Date cells */
+.pr-date { font-size: .78rem; color: var(--subtext); white-space: nowrap; text-align: center; }
+/* Title */
+.pr-title-cell {
+  overflow: hidden; text-overflow: ellipsis;
+  font-size: 1rem; line-height: 1.4;
+}
+
+/* ── Pipeline dots ── */
+.pipeline-dots {
+  display: flex; align-items: center; gap: 0; user-select: none;
+}
+.dot-segment { display: flex; align-items: center; }
+.dot-connector { width: 12px; height: 2px; background: var(--surface1); flex-shrink: 0; }
+.stage-dot {
+  width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+  position: relative; cursor: default;
+  transition: transform .12s;
+}
+.stage-dot:hover { transform: scale(1.35); }
+.stage-dot.status-completed,
+.stage-dot.status-succeeded { background: var(--green); }
+.stage-dot.status-in_progress { background: var(--blue); animation: pulse 1.8s ease-in-out infinite; }
+.stage-dot.status-pending { background: #585b70; }
+.stage-dot.status-failed,
+.stage-dot.status-rejected { background: var(--red); box-shadow: 0 0 6px var(--red); }
+.stage-dot.status-waiting_approval { background: var(--yellow); animation: pulse 2s ease-in-out infinite; }
+.stage-dot.status-not_triggered,
+.stage-dot.status-not_applicable {
+  background: transparent; border: 1.5px dashed var(--overlay);
+}
+.stage-dot.status-abandoned { background: var(--muted); }
+.stage-dot.status-canceled { background: var(--peach); opacity: .6; }
+.stage-dot.status-unknown { background: var(--muted); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; } 50% { opacity: .45; }
+}
+
+/* Work item badges */
+.wi-badges { display: flex; gap: 6px; align-items: center; font-size: .78rem; }
+.wi-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  background: var(--surface1); padding: 2px 7px; border-radius: 4px; color: var(--subtext);
+}
+.cross-repo-badge { color: var(--peach); }
+
+/* Status summary */
+.status-summary {
+  font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Row actions */
+.row-actions { display: flex; gap: 2px; align-items: center; }
+.btn-icon.spinning { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ═══════════════════════════════════════════════════════════════
+   Expanded Detail View
+   ═══════════════════════════════════════════════════════════════ */
+.pr-detail {
+  background: var(--mantle); border: 1px solid var(--surface);
+  border-top: none; border-radius: 0 0 8px 8px;
+  padding: 18px 20px; display: none;
+  animation: slideDown .15s ease-out;
+}
+.pr-detail.open { display: block; }
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.detail-section { margin-bottom: 16px; }
+.detail-section:last-child { margin-bottom: 0; }
+.detail-section-title {
+  font-size: .78rem; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px;
+}
+
+/* Section A — PR info */
+.detail-pr-title {
+  font-size: 1.05rem; font-weight: 600; margin-bottom: 6px;
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.detail-pr-title .title-text { flex: 1; word-break: break-word; }
+.detail-meta { display: flex; flex-wrap: wrap; gap: 14px; font-size: .82rem; color: var(--subtext); }
+.detail-meta-item { display: flex; align-items: center; gap: 4px; }
+.detail-meta-item .label { color: var(--muted); }
+
+/* Section B — Work items */
+.wi-card {
+  background: var(--surface); border-radius: 6px; padding: 10px 14px;
+  margin-bottom: 6px;
+}
+.wi-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.wi-type-badge {
+  font-size: .7rem; font-weight: 700; padding: 2px 6px; border-radius: 3px;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.wi-type-badge.Epic { background: var(--mauve); color: var(--crust); }
+.wi-type-badge.Task { background: var(--blue); color: var(--crust); }
+.wi-type-badge.Bug  { background: var(--red); color: var(--crust); }
+.wi-type-badge.UserStory, .wi-type-badge.User\ Story { background: var(--teal); color: var(--crust); }
+.wi-title { font-size: .88rem; font-weight: 500; }
+.wi-title a { color: var(--text); }
+.wi-title a:hover { color: var(--blue); }
+.wi-state { font-size: .75rem; color: var(--subtext); margin-left: auto; }
+.wi-desc { font-size: .8rem; color: var(--subtext); margin-top: 4px; line-height: 1.4; }
+.wi-cross-repo { font-size: .8rem; color: var(--peach); margin-top: 6px; }
+
+/* Section C — Pipeline detail */
+.pipeline-detail-track {
+  display: flex; align-items: flex-start; gap: 0; padding: 8px 0; overflow-x: auto;
+}
+.pipeline-detail-node {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  min-width: 56px; position: relative;
+}
+.pipeline-detail-dot {
+  width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+  transition: transform .12s; position: relative;
+}
+.pipeline-detail-dot:hover { transform: scale(1.25); }
+.pipeline-detail-dot.status-completed,
+.pipeline-detail-dot.status-succeeded { background: var(--green); }
+.pipeline-detail-dot.status-in_progress { background: var(--blue); animation: pulse 1.8s ease-in-out infinite; }
+.pipeline-detail-dot.status-pending { background: #585b70; }
+.pipeline-detail-dot.status-failed,
+.pipeline-detail-dot.status-rejected { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.pipeline-detail-dot.status-waiting_approval { background: var(--yellow); animation: pulse 2s ease-in-out infinite; }
+.pipeline-detail-dot.status-not_triggered,
+.pipeline-detail-dot.status-not_applicable {
+  background: transparent; border: 2px dashed var(--overlay);
+}
+.pipeline-detail-dot.status-abandoned { background: var(--muted); }
+.pipeline-detail-dot.status-canceled { background: var(--peach); opacity: .6; }
+.pipeline-detail-dot.status-unknown { background: var(--muted); }
+.pipeline-detail-label { font-size: .7rem; color: var(--subtext); text-align: center; }
+.pipeline-detail-status { font-size: .65rem; color: var(--muted); text-align: center; }
+.pipeline-detail-date { font-size: .6rem; color: var(--subtext); text-align: center; opacity: .75; }
+.pipeline-detail-connector { width: 20px; height: 2px; background: var(--surface1); margin-top: 11px; flex-shrink: 0; }
+
+.stage-inline-detail {
+  background: var(--surface); border-radius: 6px; padding: 10px 14px;
+  margin-top: 10px; font-size: .82rem; display: none; animation: slideDown .15s ease-out;
+}
+.stage-inline-detail.open { display: block; }
+.stage-inline-detail pre {
+  background: var(--crust); border-radius: 4px; padding: 8px 10px;
+  font-size: .78rem; overflow-x: auto; color: var(--subtext); margin-top: 6px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.autofix-cmd {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface1); padding: 4px 10px; border-radius: 4px;
+  font-size: .78rem; color: var(--peach); margin-top: 8px; cursor: pointer;
+  transition: background .15s;
+}
+.autofix-cmd:hover { background: var(--overlay); }
+
+/* ═══════════════════════════════════════════════════════════════
+   Archive section
+   ═══════════════════════════════════════════════════════════════ */
+.archive-section {
+  margin-top: 24px; border-top: 1px solid var(--surface);
+  padding-top: 12px;
+}
+.archive-toggle {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  font-size: .88rem; color: var(--muted); padding: 6px 0;
+  user-select: none;
+}
+.archive-toggle:hover { color: var(--subtext); }
+.archive-toggle .chevron { transition: transform .2s; }
+.archive-toggle .chevron.open { transform: rotate(90deg); }
+.archive-list { display: none; flex-direction: column; gap: 2px; margin-top: 8px; }
+.archive-list.open { display: flex; }
+
+/* ═══════════════════════════════════════════════════════════════
+   Status bar
+   ═══════════════════════════════════════════════════════════════ */
+.status-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: var(--mantle); border-top: 1px solid var(--surface);
+  padding: 6px 24px; font-size: .75rem; color: var(--muted);
+  display: flex; align-items: center; gap: 16px; z-index: 100;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Tooltip
+   ═══════════════════════════════════════════════════════════════ */
+.tooltip {
+  position: fixed; background: var(--crust); color: var(--text);
+  padding: 4px 10px; border-radius: 5px; font-size: .75rem;
+  pointer-events: none; z-index: 1000; white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Toast
+   ═══════════════════════════════════════════════════════════════ */
+.toast-container {
+  position: fixed; top: 16px; right: 16px; z-index: 2000;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.toast {
+  background: var(--surface); border-left: 3px solid var(--red);
+  padding: 10px 16px; border-radius: 6px; font-size: .82rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,.4); animation: toastIn .25s ease-out;
+  max-width: 360px;
+}
+.toast.success { border-left-color: var(--green); }
+.toast.info { border-left-color: var(--blue); }
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.toast-fade-out { animation: toastOut .3s ease-in forwards; }
+@keyframes toastOut {
+  to { opacity: 0; transform: translateX(20px); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Empty state
+   ═══════════════════════════════════════════════════════════════ */
+.empty-state {
+  text-align: center; padding: 48px 20px; color: var(--muted);
+}
+.empty-state .icon { font-size: 2.5rem; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<!-- ═══ Header ═══ -->
+<header class="header">
+  <div class="header-title"><span>⚙</span> Pipeline Dashboard</div>
+  <div class="scan-indicator" id="scanIndicator">
+    <span class="spinner-inline">⟳</span> Scanning…
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-primary" id="btnRefreshAll" onclick="refreshAll()">⟳ Refresh</button>
+  </div>
+</header>
+
+<!-- ═══ Toolbar ═══ -->
+<div class="toolbar">
+  <input class="search-box" id="searchBox" type="text" placeholder="Search PRs (title, repo, branch, #)…">
+  <select class="filter-select" id="filterRepo"><option value="">All repos</option></select>
+  <select class="filter-select" id="filterStatus">
+    <option value="">All statuses</option>
+    <option value="in_review">In Review</option>
+    <option value="failed">Failed</option>
+    <option value="waiting_approval">Waiting Approval</option>
+    <option value="completed">Completed</option>
+  </select>
+  <select class="filter-select" id="sortOrder">
+    <option value="date_desc">Newest first</option>
+    <option value="date_asc">Oldest first</option>
+    <option value="repo_date">Repo → Date</option>
+  </select>
+</div>
+
+<!-- ═══ Main ═══ -->
+<div class="main">
+  <div class="pr-list" id="prList"></div>
+
+  <!-- Archive -->
+  <div class="archive-section" id="archiveSection" style="display:none;">
+    <div class="archive-toggle" onclick="toggleArchive()">
+      <span class="chevron" id="archiveChevron">▶</span>
+      <span>Archived PRs (<span id="archiveCount">0</span>)</span>
+    </div>
+    <div class="archive-list" id="archiveList"></div>
+  </div>
+</div>
+
+<!-- ═══ Status bar ═══ -->
+<div class="status-bar" id="statusBar">Loading…</div>
+
+<!-- ═══ Tooltip ═══ -->
+<div class="tooltip" id="tooltip"></div>
+
+<!-- ═══ Toast container ═══ -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   State
+   ═══════════════════════════════════════════════════════════════ */
+let prs = [];
+let archivedPrs = [];
+let expandedPrId = null;
+let expandedStageKey = null;
+const refreshingIds = new Set();
+let lastScanTime = null;
+let archiveOpen = false;
+
+const STAGE_ORDER = [
+  'local_branch','remote_branch','pr_review','pr_approved','pr_completed',
+  'build_pipeline','buddy_pipeline','dev_pipeline','stage_pipeline','prod_pipeline'
+];
+const STAGE_LABELS = {
+  local_branch:'Local', remote_branch:'Remote', pr_review:'Review',
+  pr_approved:'Approved', pr_completed:'Merged', build_pipeline:'Build',
+  buddy_pipeline:'Buddy', dev_pipeline:'Dev', stage_pipeline:'Stage', prod_pipeline:'Prod'
+};
+const REPO_PALETTE = ['#89b4fa','#a6e3a1','#f38ba8','#f9e2af','#cba6f7','#94e2d5','#fab387','#f5c2e7','#89dceb','#b4befe','#f2cdcd','#f5e0dc'];
+
+/* ═══════════════════════════════════════════════════════════════
+   Helpers
+   ═══════════════════════════════════════════════════════════════ */
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+function repoColor(repo) { return REPO_PALETTE[hashStr(repo) % REPO_PALETTE.length]; }
+
+function shortRepo(repo) {
+  return repo;
+}
+
+function truncate(s, n) {
+  if (!s) return '';
+  return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+function timeAgo(iso) {
+  if (!iso) return 'never';
+  const d = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(d / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function shortDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+}
+
+function getLastCompletedDate(pr) {
+  const stages = pr.stages || {};
+  let latest = null;
+  const COMPLETED = ['completed', 'succeeded'];
+  for (const k of [...STAGE_ORDER].reverse()) {
+    const s = stages[k];
+    if (!s || !COMPLETED.includes(s.status)) continue;
+    const dt = s.details?.finish_time || s.details?.closed_at || s.details?.start_time;
+    if (dt) return dt;
+    if (!latest && (pr.closed_at || pr.created_at)) {
+      latest = pr.closed_at || pr.created_at;
+    }
+  }
+  return latest;
+}
+
+function cleanDesc(html, maxLen) {
+  if (!html) return '';
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  const text = tmp.textContent || '';
+  return truncate(text.replace(/\s+/g, ' ').trim(), maxLen);
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* ═══ Status summary derivation ═══ */
+function getStatusSummary(pr) {
+  const st = pr.stages || {};
+  // Check from latest stage backwards for the most relevant status
+  for (let i = STAGE_ORDER.length - 1; i >= 0; i--) {
+    const k = STAGE_ORDER[i];
+    const s = st[k];
+    if (!s) continue;
+    if (s.status === 'failed')
+      return { text: `❌ ${STAGE_LABELS[k]} failed`, cls: 'red' };
+    if (s.status === 'rejected')
+      return { text: `❌ ${STAGE_LABELS[k]} rejected`, cls: 'red' };
+  }
+  for (let i = STAGE_ORDER.length - 1; i >= 0; i--) {
+    const k = STAGE_ORDER[i];
+    const s = st[k];
+    if (!s) continue;
+    if (s.status === 'waiting_approval')
+      return { text: `⏳ ${STAGE_LABELS[k]} awaiting approval`, cls: 'yellow' };
+  }
+  for (let i = STAGE_ORDER.length - 1; i >= 0; i--) {
+    const k = STAGE_ORDER[i];
+    const s = st[k];
+    if (!s) continue;
+    if (s.status === 'in_progress')
+      return { text: `🔄 ${STAGE_LABELS[k]} in progress`, cls: 'blue' };
+  }
+  // Find the last completed/succeeded stage
+  let lastDone = null;
+  for (let i = STAGE_ORDER.length - 1; i >= 0; i--) {
+    const k = STAGE_ORDER[i];
+    const s = st[k];
+    if (!s) continue;
+    if (s.status === 'completed' || s.status === 'succeeded') { lastDone = k; break; }
+  }
+  if (lastDone === 'prod_pipeline')
+    return { text: '✅ Fully deployed', cls: 'green' };
+  if (lastDone)
+    return { text: `✅ ${STAGE_LABELS[lastDone]} passed`, cls: 'green' };
+
+  if (pr.pr_status === 'abandoned')
+    return { text: '🚫 Abandoned', cls: 'muted' };
+
+  // Nothing meaningful yet
+  const hasAny = Object.values(st).some(s => s && s.status !== 'not_triggered' && s.status !== 'pending' && s.status !== 'not_applicable');
+  if (!hasAny)
+    return { text: '⏳ In review', cls: 'yellow' };
+
+  return { text: '⏳ In progress', cls: 'blue' };
+}
+
+function getStatusFilterCategory(pr) {
+  const summary = getStatusSummary(pr);
+  if (summary.text.includes('failed') || summary.text.includes('rejected')) return 'failed';
+  if (summary.text.includes('awaiting approval')) return 'waiting_approval';
+  if (summary.text.includes('Fully deployed') || pr.pr_status === 'completed') return 'completed';
+  return 'in_review';
+}
+
+/* ═══ Cross-repo detection ═══ */
+function isCrossRepo(pr) {
+  if (!pr.work_items) return false;
+  return pr.work_items.some(wi =>
+    wi.linked_prs && wi.linked_prs.some(lp => {
+      // Different repo or different PR
+      return lp.pr_id !== pr.pr_id;
+    })
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   API
+   ═══════════════════════════════════════════════════════════════ */
+async function api(method, path, opts = {}) {
+  try {
+    const resp = await fetch(path, { method, ...opts });
+    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    return await resp.json();
+  } catch (e) {
+    showToast(`API error: ${e.message}`, 'error');
+    throw e;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Toast
+   ═══════════════════════════════════════════════════════════════ */
+function showToast(msg, type = 'error') {
+  const c = document.getElementById('toastContainer');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => {
+    t.classList.add('toast-fade-out');
+    setTimeout(() => t.remove(), 300);
+  }, 4000);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Tooltip
+   ═══════════════════════════════════════════════════════════════ */
+const tooltipEl = document.getElementById('tooltip');
+function showTooltip(e, text) {
+  tooltipEl.textContent = text;
+  tooltipEl.style.display = 'block';
+  tooltipEl.style.left = (e.clientX + 12) + 'px';
+  tooltipEl.style.top = (e.clientY - 8) + 'px';
+}
+function hideTooltip() { tooltipEl.style.display = 'none'; }
+
+/* ═══════════════════════════════════════════════════════════════
+   Rendering — PR Row
+   ═══════════════════════════════════════════════════════════════ */
+function renderPrRow(pr, isArchived = false) {
+  const id = pr.pr_id;
+  const isRefreshing = refreshingIds.has(id);
+  const isExpanded = expandedPrId === id;
+  const summary = getStatusSummary(pr);
+  const wiCount = (pr.work_items || []).length;
+  const crossRepo = isCrossRepo(pr);
+  const color = repoColor(pr.repo || '');
+
+  // Row
+  let html = `<div class="pr-row ${isExpanded ? 'expanded' : ''} ${isArchived ? 'archived-row' : ''}" data-prid="${id}" onclick="toggleDetail(event, ${id})">`;
+
+  // Creation date (first column)
+  html += `<span class="pr-date" title="${pr.created_at || ''}">${shortDate(pr.created_at)}</span>`;
+
+  // Repo badge
+  html += `<span class="repo-badge" style="background:${color}22;color:${color};border:1px solid ${color}44">${escHtml(shortRepo(pr.repo || ''))}</span>`;
+
+  // PR #
+  html += `<span class="pr-num"><a href="${escHtml(pr.pr_url || '#')}" target="_blank" onclick="event.stopPropagation()">#${id}</a></span>`;
+
+  // Title
+  html += `<span class="pr-title-cell" title="${escHtml(pr.title)}">${escHtml(pr.title)}</span>`;
+
+  // Pipeline dots
+  html += renderPipelineDots(pr);
+
+  // WI badges
+  html += `<span class="wi-badges">`;
+  if (wiCount > 0) html += `<span class="wi-badge">🎫 ${wiCount}</span>`;
+  if (crossRepo) html += `<span class="wi-badge cross-repo-badge">🔗 cross-repo</span>`;
+  html += `</span>`;
+
+  // Actions
+  html += `<span class="row-actions" onclick="event.stopPropagation()">`;
+  if (!isArchived) {
+    html += `<button class="btn-icon ${isRefreshing ? 'spinning' : ''}" title="Refresh" onclick="refreshPr(${id})" ${isRefreshing ? 'disabled' : ''}>⟳</button>`;
+    html += `<button class="btn-icon" title="Archive" onclick="archivePr(${id})">📦</button>`;
+  } else {
+    html += `<button class="btn-icon" title="Unarchive" onclick="unarchivePr(${id})">📤</button>`;
+  }
+  html += `</span>`;
+
+  html += `</div>`;
+
+  // Detail pane
+  if (!isArchived) {
+    html += `<div class="pr-detail ${isExpanded ? 'open' : ''}" id="detail-${id}">`;
+    if (isExpanded) html += renderDetailContent(pr);
+    html += `</div>`;
+  }
+
+  return html;
+}
+
+/* ═══ Pipeline dots (compact) ═══ */
+function renderPipelineDots(pr) {
+  const stages = pr.stages || {};
+  let html = '<span class="pipeline-dots">';
+  STAGE_ORDER.forEach((k, i) => {
+    const s = stages[k] || { status: 'unknown' };
+    if (i > 0) html += '<span class="dot-connector"></span>';
+    html += `<span class="stage-dot status-${s.status}" data-stage="${k}" data-prid="${pr.pr_id}"
+      onmouseenter="showTooltip(event, '${STAGE_LABELS[k]}: ${s.status.replace(/_/g, ' ')}')"
+      onmouseleave="hideTooltip()"></span>`;
+  });
+  html += '</span>';
+  return html;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Rendering — Detail View
+   ═══════════════════════════════════════════════════════════════ */
+function renderDetailContent(pr) {
+  let html = '';
+
+  /* Section A — PR Info */
+  html += `<div class="detail-section">`;
+  html += `<div class="detail-section-title">Pull Request</div>`;
+  html += `<div class="detail-pr-title">
+    <span class="title-text">${escHtml(pr.title)}</span>
+    <button class="btn-icon" title="Copy title" onclick="copyText('${escHtml(pr.title).replace(/'/g, "\\'")}')">📋</button>
+  </div>`;
+  html += `<div class="detail-meta">
+    <span class="detail-meta-item"><span class="label">Repo:</span> ${escHtml(pr.repo)}</span>
+    <span class="detail-meta-item"><span class="label">Branch:</span> ${escHtml(shortBranch(pr.source_branch))} → ${escHtml(pr.target_branch)}</span>
+    <span class="detail-meta-item"><span class="label">Status:</span> ${escHtml(pr.pr_status)}</span>
+    <span class="detail-meta-item"><span class="label">Created:</span> ${pr.created_at ? new Date(pr.created_at).toLocaleDateString() : '—'}</span>
+    <span class="detail-meta-item"><a href="${escHtml(pr.pr_url || '#')}" target="_blank">Open in ADO ↗</a></span>
+  </div>`;
+  html += `</div>`;
+
+  /* Section B — Work Items */
+  if (pr.work_items && pr.work_items.length > 0) {
+    html += `<div class="detail-section">`;
+    html += `<div class="detail-section-title">Work Items</div>`;
+    pr.work_items.forEach(wi => {
+      html += `<div class="wi-card">`;
+      html += `<div class="wi-header">
+        <span class="wi-type-badge ${escHtml(wi.type || '')}">${escHtml(wi.type || 'Item')}</span>
+        <span class="wi-title"><a href="${escHtml(wi.url || '#')}" target="_blank">${escHtml(wi.title)}</a></span>
+        <span class="wi-state">${escHtml(wi.state || '')}</span>
+      </div>`;
+      const desc = cleanDesc(wi.description, 150);
+      if (desc) html += `<div class="wi-desc">${escHtml(desc)}</div>`;
+      // Cross-repo info
+      if (wi.linked_prs && wi.linked_prs.length > 0) {
+        const others = wi.linked_prs.filter(lp => lp.pr_id !== pr.pr_id);
+        if (others.length > 0) {
+          html += `<div class="wi-cross-repo">🔗 Also linked: ${others.map(lp => `PR #${lp.pr_id}`).join(', ')}</div>`;
+        }
+      }
+      html += `</div>`;
+    });
+    html += `</div>`;
+  }
+
+  /* Section C — Pipeline Stages */
+  html += `<div class="detail-section">`;
+  html += `<div class="detail-section-title">Pipeline Stages</div>`;
+  html += renderPipelineDetail(pr);
+  html += `<div id="stage-detail-area-${pr.pr_id}">`;
+  if (expandedStageKey && expandedPrId === pr.pr_id) {
+    html += `<div class="stage-inline-detail open" id="stage-inline-${pr.pr_id}">Loading stage details…</div>`;
+  }
+  html += `</div>`;
+  html += `</div>`;
+
+  return html;
+}
+
+function shortBranch(b) {
+  if (!b) return '';
+  return b.replace(/^refs\/heads\//, '');
+}
+
+function renderPipelineDetail(pr) {
+  const stages = pr.stages || {};
+  let html = '<div class="pipeline-detail-track">';
+  STAGE_ORDER.forEach((k, i) => {
+    const s = stages[k] || { status: 'unknown' };
+    if (i > 0) html += '<span class="pipeline-detail-connector"></span>';
+    const dt = s.details?.finish_time || s.details?.start_time || s.details?.closed_at || '';
+    const dateStr = dt ? shortDate(dt) : '';
+    html += `<div class="pipeline-detail-node">
+      <div class="pipeline-detail-dot status-${s.status}" data-stage="${k}" data-prid="${pr.pr_id}"
+        onclick="clickStage(event, ${pr.pr_id}, '${k}')"
+        ondblclick="dblClickStage(event, ${pr.pr_id}, '${k}')"
+        onmouseenter="showTooltip(event, '${STAGE_LABELS[k]}: ${s.status.replace(/_/g, ' ')}${dt ? '\\n' + new Date(dt).toLocaleString() : ''}\\nClick for details${s.url ? '\\nDouble-click to open in ADO' : ''}')"
+        onmouseleave="hideTooltip()"></div>
+      <div class="pipeline-detail-label">${STAGE_LABELS[k]}</div>
+      <div class="pipeline-detail-status">${s.status.replace(/_/g, ' ')}</div>
+      ${dateStr ? `<div class="pipeline-detail-date">${dateStr}</div>` : ''}
+    </div>`;
+  });
+  html += '</div>';
+  return html;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Stage click / double-click
+   ═══════════════════════════════════════════════════════════════ */
+async function clickStage(e, prId, stageKey) {
+  e.stopPropagation();
+  hideTooltip();
+  const area = document.getElementById(`stage-detail-area-${prId}`);
+  if (!area) return;
+
+  // Toggle off if same stage
+  if (expandedStageKey === stageKey && expandedPrId === prId) {
+    expandedStageKey = null;
+    area.innerHTML = '';
+    return;
+  }
+  expandedStageKey = stageKey;
+  area.innerHTML = '<div class="stage-inline-detail open">Loading…</div>';
+
+  try {
+    const data = await api('GET', `/api/pr/${prId}/step/${stageKey}/details`);
+    const stg = data.stage || {};
+    let content = `<strong>${STAGE_LABELS[stageKey]}</strong> — ${escHtml((stg.status || '').replace(/_/g, ' '))}`;
+    if (stg.url) content += ` · <a href="${escHtml(stg.url)}" target="_blank">Open in ADO ↗</a>`;
+    if (stg.details) {
+      content += `<pre>${escHtml(typeof stg.details === 'string' ? stg.details : JSON.stringify(stg.details, null, 2))}</pre>`;
+    }
+    // Failure info
+    const pr = prs.find(p => p.pr_id === prId);
+    const stageInfo = pr && pr.stages ? pr.stages[stageKey] : null;
+    if (stageInfo && (stageInfo.status === 'failed' || stageInfo.status === 'rejected')) {
+      content += await renderFailureInfo(prId);
+    }
+    area.innerHTML = `<div class="stage-inline-detail open">${content}</div>`;
+  } catch {
+    area.innerHTML = `<div class="stage-inline-detail open" style="color:var(--red)">Failed to load stage details.</div>`;
+  }
+}
+
+async function renderFailureInfo(prId) {
+  try {
+    const data = await api('GET', `/api/pr/${prId}/failure`);
+    let html = '';
+    if (data.summary) html += `<pre>${escHtml(data.summary)}</pre>`;
+    if (data.autofix_command) {
+      html += `<div class="autofix-cmd" onclick="copyText(\`${escHtml(data.autofix_command).replace(/`/g, '\\`')}\`); event.stopPropagation();">🤖 Auto-Fix: <code>${escHtml(truncate(data.autofix_command, 80))}</code> 📋</div>`;
+    }
+    return html;
+  } catch {
+    return '';
+  }
+}
+
+function dblClickStage(e, prId, stageKey) {
+  e.stopPropagation();
+  e.preventDefault();
+  hideTooltip();
+  const pr = prs.find(p => p.pr_id === prId);
+  const url = pr && pr.stages && pr.stages[stageKey] ? pr.stages[stageKey].url : null;
+  if (url) window.open(url, '_blank');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Copy helper
+   ═══════════════════════════════════════════════════════════════ */
+function copyText(text) {
+  navigator.clipboard.writeText(text).then(() => showToast('Copied!', 'success')).catch(() => showToast('Copy failed', 'error'));
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Rendering — Full list
+   ═══════════════════════════════════════════════════════════════ */
+function renderAll() {
+  const filtered = applyFilters(prs);
+  const listEl = document.getElementById('prList');
+
+  if (filtered.length === 0 && prs.length === 0) {
+    listEl.innerHTML = `<div class="empty-state"><div class="icon">📭</div><div>No PRs found. Click <strong>Refresh</strong> to scan.</div></div>`;
+  } else if (filtered.length === 0) {
+    listEl.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><div>No PRs match your filters.</div></div>`;
+  } else {
+    listEl.innerHTML = filtered.map(pr => renderPrRow(pr, false)).join('');
+  }
+
+  renderArchive();
+  updateStatusBar();
+  updateRepoFilter();
+}
+
+function renderSingleRow(prId) {
+  const pr = prs.find(p => p.pr_id === prId);
+  if (!pr) return;
+
+  // Find the row + detail pair in DOM
+  const row = document.querySelector(`.pr-row[data-prid="${prId}"]`);
+  if (!row) return;
+
+  const detail = document.getElementById(`detail-${prId}`);
+  const temp = document.createElement('div');
+  temp.innerHTML = renderPrRow(pr, false);
+
+  const newRow = temp.querySelector('.pr-row');
+  const newDetail = temp.querySelector('.pr-detail');
+  if (newRow) row.replaceWith(newRow);
+  if (newDetail && detail) detail.replaceWith(newDetail);
+}
+
+/* ═══ Archive ═══ */
+function renderArchive() {
+  const section = document.getElementById('archiveSection');
+  const list = document.getElementById('archiveList');
+  const count = document.getElementById('archiveCount');
+
+  if (archivedPrs.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+  count.textContent = archivedPrs.length;
+  list.innerHTML = archivedPrs.map(pr => renderPrRow(pr, true)).join('');
+}
+
+function toggleArchive() {
+  archiveOpen = !archiveOpen;
+  document.getElementById('archiveList').classList.toggle('open', archiveOpen);
+  document.getElementById('archiveChevron').classList.toggle('open', archiveOpen);
+}
+
+/* ═══ Filters ═══ */
+function applyFilters(list) {
+  const q = document.getElementById('searchBox').value.toLowerCase().trim();
+  const repo = document.getElementById('filterRepo').value;
+  const status = document.getElementById('filterStatus').value;
+  const sort = document.getElementById('sortOrder').value;
+
+  let result = list.filter(pr => {
+    if (q) {
+      const hay = `${pr.title} ${pr.repo} ${pr.source_branch} ${pr.target_branch} #${pr.pr_id}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (repo && pr.repo !== repo) return false;
+    if (status && getStatusFilterCategory(pr) !== status) return false;
+    return true;
+  });
+
+  // Sort
+  if (sort === 'date_desc') {
+    result.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  } else if (sort === 'date_asc') {
+    result.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+  } else if (sort === 'repo_date') {
+    result.sort((a, b) => {
+      const rc = (a.repo || '').localeCompare(b.repo || '');
+      if (rc !== 0) return rc;
+      return (b.created_at || '').localeCompare(a.created_at || '');
+    });
+  }
+
+  return result;
+}
+
+function updateRepoFilter() {
+  const sel = document.getElementById('filterRepo');
+  const current = sel.value;
+  const repos = [...new Set(prs.map(p => p.repo).filter(Boolean))].sort();
+  const opts = '<option value="">All repos</option>' + repos.map(r => `<option value="${escHtml(r)}" ${r === current ? 'selected' : ''}>${escHtml(shortRepo(r))}</option>`).join('');
+  sel.innerHTML = opts;
+}
+
+document.getElementById('searchBox').addEventListener('input', renderAll);
+document.getElementById('filterRepo').addEventListener('change', renderAll);
+document.getElementById('filterStatus').addEventListener('change', renderAll);
+document.getElementById('sortOrder').addEventListener('change', renderAll);
+
+/* ═══ Status bar ═══ */
+function updateStatusBar() {
+  const total = prs.length;
+  const failed = prs.filter(pr => getStatusFilterCategory(pr) === 'failed').length;
+  const scanAgo = lastScanTime ? timeAgo(lastScanTime) : 'never';
+  document.getElementById('statusBar').textContent = `${total} PRs tracked · ${failed} failed · Last scan: ${scanAgo}`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Expand / Collapse
+   ═══════════════════════════════════════════════════════════════ */
+function toggleDetail(e, prId) {
+  // Don't toggle if clicking a link or button
+  if (e.target.closest('a, button, .row-actions')) return;
+
+  if (expandedPrId === prId) {
+    expandedPrId = null;
+    expandedStageKey = null;
+  } else {
+    // Collapse previous
+    if (expandedPrId !== null) {
+      const prevRow = document.querySelector(`.pr-row[data-prid="${expandedPrId}"]`);
+      const prevDetail = document.getElementById(`detail-${expandedPrId}`);
+      if (prevRow) prevRow.classList.remove('expanded');
+      if (prevDetail) { prevDetail.classList.remove('open'); prevDetail.innerHTML = ''; }
+    }
+    expandedPrId = prId;
+    expandedStageKey = null;
+  }
+
+  const row = document.querySelector(`.pr-row[data-prid="${prId}"]`);
+  const detail = document.getElementById(`detail-${prId}`);
+  if (!row || !detail) return;
+
+  if (expandedPrId === prId) {
+    row.classList.add('expanded');
+    const pr = prs.find(p => p.pr_id === prId);
+    if (pr) detail.innerHTML = renderDetailContent(pr);
+    detail.classList.add('open');
+  } else {
+    row.classList.remove('expanded');
+    detail.classList.remove('open');
+    detail.innerHTML = '';
+  }
+}
+
+/* Escape key closes detail */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && expandedPrId !== null) {
+    const row = document.querySelector(`.pr-row[data-prid="${expandedPrId}"]`);
+    const detail = document.getElementById(`detail-${expandedPrId}`);
+    if (row) row.classList.remove('expanded');
+    if (detail) { detail.classList.remove('open'); detail.innerHTML = ''; }
+    expandedPrId = null;
+    expandedStageKey = null;
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   Actions
+   ═══════════════════════════════════════════════════════════════ */
+async function refreshPr(prId) {
+  if (refreshingIds.has(prId)) return;
+  refreshingIds.add(prId);
+  renderSingleRow(prId);
+
+  try {
+    const data = await api('POST', `/api/refresh/${prId}`);
+    // If PR was abandoned, remove it from the list
+    if (data && data.removed) {
+      prs = prs.filter(p => p.pr_id !== prId);
+      refreshingIds.delete(prId);
+      renderAll();
+      updateStatusBar();
+      return;
+    }
+    // Merge updated PR data
+    const idx = prs.findIndex(p => p.pr_id === prId);
+    if (idx !== -1 && data) {
+      prs[idx] = { ...prs[idx], ...data };
+    }
+  } catch { /* toast already shown */ }
+
+  refreshingIds.delete(prId);
+  renderSingleRow(prId);
+
+  // If this PR is expanded, re-render detail
+  if (expandedPrId === prId) {
+    const detail = document.getElementById(`detail-${prId}`);
+    const pr = prs.find(p => p.pr_id === prId);
+    if (detail && pr) detail.innerHTML = renderDetailContent(pr);
+  }
+  updateStatusBar();
+}
+
+async function refreshAll() {
+  const btn = document.getElementById('btnRefreshAll');
+  let completed = 0;
+
+  btn.disabled = true;
+  btn.textContent = `⟳ Scanning…`;
+
+  // Step 1: scan for new PRs
+  try {
+    await api('POST', '/api/scan');
+    lastScanTime = new Date().toISOString();
+    // Re-fetch PR list in case scan found new ones
+    const result = await api('GET', '/api/prs');
+    prs = result.prs || [];
+    renderAll();
+  } catch { /* continue with existing list */ }
+
+  // Step 2: refresh ALL PRs (not just visible — ensures stale PRs get updated too)
+  const toRefresh = prs;
+  const totalRefresh = toRefresh.length;
+  completed = 0;
+  btn.textContent = `⟳ Refreshing 0/${totalRefresh}…`;
+
+  const promises = toRefresh.map(pr =>
+    refreshPr(pr.pr_id).then(() => {
+      completed++;
+      btn.textContent = `⟳ Refreshing ${completed}/${totalRefresh}…`;
+    })
+  );
+
+  await Promise.allSettled(promises);
+
+  btn.disabled = false;
+  btn.textContent = '⟳ Refresh';
+  updateStatusBar();
+}
+
+async function archivePr(prId) {
+  try {
+    await api('POST', `/api/archive/${prId}`);
+    const idx = prs.findIndex(p => p.pr_id === prId);
+    if (idx !== -1) {
+      const [removed] = prs.splice(idx, 1);
+      archivedPrs.push(removed);
+    }
+    if (expandedPrId === prId) { expandedPrId = null; expandedStageKey = null; }
+    renderAll();
+    showToast('PR archived', 'info');
+  } catch { /* toast shown */ }
+}
+
+async function unarchivePr(prId) {
+  try {
+    await api('POST', `/api/unarchive/${prId}`);
+    const idx = archivedPrs.findIndex(p => p.pr_id === prId);
+    if (idx !== -1) {
+      const [removed] = archivedPrs.splice(idx, 1);
+      prs.unshift(removed);
+    }
+    renderAll();
+    showToast('PR unarchived', 'info');
+  } catch { /* toast shown */ }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Scan indicator
+   ═══════════════════════════════════════════════════════════════ */
+function setScanIndicator(visible) {
+  document.getElementById('scanIndicator').classList.toggle('visible', visible);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Init — lazy refresh
+   ═══════════════════════════════════════════════════════════════ */
+async function init() {
+  // Step 1: instant load from cache
+  try {
+    const result = await api('GET', '/api/prs');
+    prs = result.prs || [];
+  } catch {
+    prs = [];
+  }
+
+  // Load archived
+  try {
+    const result = await api('GET', '/api/archived');
+    archivedPrs = result.archived || [];
+  } catch {
+    archivedPrs = [];
+  }
+
+  renderAll();
+
+  // Step 2: background scan (non-blocking)
+  setScanIndicator(true);
+  api('POST', '/api/scan').then(async () => {
+    lastScanTime = new Date().toISOString();
+    try {
+      const result = await api('GET', '/api/prs');
+      const newPrs = result.prs || [];
+      // Merge: keep existing data, add new ones
+      const existingIds = new Set(prs.map(p => p.pr_id));
+      const added = newPrs.filter(p => !existingIds.has(p.pr_id));
+      if (added.length > 0) {
+        prs = [...added, ...prs];
+        renderAll();
+        showToast(`Found ${added.length} new PR(s)`, 'info');
+      }
+    } catch { /* ignore */ }
+
+    // Step 3: auto-refresh PRs that have never been refreshed (empty stages)
+    const stale = prs.filter(p => !p.last_refreshed || !p.stages || Object.keys(p.stages).length === 0);
+    if (stale.length > 0) {
+      const total = stale.length;
+      let done = 0;
+      const btn = document.getElementById('btnRefreshAll');
+      btn.disabled = true;
+      btn.textContent = `⟳ Auto-refreshing 0/${total}…`;
+      const refreshPromises = stale.map(pr =>
+        refreshPr(pr.pr_id).then(() => {
+          done++;
+          btn.textContent = `⟳ Auto-refreshing ${done}/${total}…`;
+        })
+      );
+      await Promise.allSettled(refreshPromises);
+      btn.disabled = false;
+      btn.textContent = '⟳ Refresh';
+      renderAll();
+      updateStatusBar();
+    }
+  }).catch(() => { /* already toasted */ }).finally(() => setScanIndicator(false));
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+[
+  {
+    "id": "coreidentity-autoextend",
+    "name": "CoreIdentity Auto-Extend",
+    "description": "Extends expiring CoreIdentity memberships (within 30 days)",
+    "schedule": "Weekly — Monday 9:30 AM",
+    "dashboard": "http://localhost:8090/dashboard.html",
+    "port": 8090,
+    "folder": "coreidentity-autoextend",
+    "cmd": ["dashboard_server.py"],
+    "health_path": "/dashboard.html"
+  },
+  {
+    "id": "copilot-dashboard",
+    "name": "Copilot CLI Dashboard",
+    "description": "Usage analytics for Copilot CLI sessions — tokens, duration, categories, corrections, parallel sessions",
+    "schedule": "Daily — 9:00 AM + on page load",
+    "dashboard": "http://localhost:8787/dashboard.html",
+    "port": 8787,
+    "folder": "copilot-dashboard",
+    "cmd": ["launch.py", "--no-browser"],
+    "health_path": "/dashboard-data.json"
+  },
+  {
+    "id": "pipeline-dashboard",
+    "name": "Pipeline Dashboard",
+    "description": "Track PR lifecycle across ADO repos — from local branch to prod deployment",
+    "schedule": "Auto-refresh on open + manual",
+    "dashboard": "http://localhost:8093/dashboard.html",
+    "port": 8093,
+    "folder": "pipeline-dashboard",
+    "cmd": ["pipeline_dashboard.py", "--no-browser"],
+    "health_path": "/dashboard.html"
+  }
+]

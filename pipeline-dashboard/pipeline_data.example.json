@@ -1,0 +1,21 @@
+{
+  "config": {
+    "creator_email": "YOUR_EMAIL@microsoft.com",
+    "ado_project_id": "YOUR_PROJECT_GUID",
+    "ado_project": "YOUR_PROJECT_NAME",
+    "auto_scan": true,
+    "poll_interval_seconds": 300,
+    "ado_org": "https://dev.azure.com/YOUR_ORG",
+    "repos": {
+      "Example-Repo-1": "REPO_GUID_1",
+      "Example-Repo-2": "REPO_GUID_2",
+      "Example-Cross-Org-Repo": {
+        "id": "REPO_GUID_3",
+        "org": "https://dev.azure.com/OTHER_ORG",
+        "project": "OtherProject"
+      }
+    }
+  },
+  "prs": [],
+  "archived": []
+}

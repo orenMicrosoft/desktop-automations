@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CoreIdentity Auto-Extend</title>
+<meta http-equiv="refresh" content="60">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #1e1e2e; color: #cdd6f4; padding: 24px; }
+  h1 { color: #89b4fa; margin-bottom: 4px; }
+  .subtitle { color: #6c7086; margin-bottom: 24px; font-size: 14px; }
+  .cards { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  .card { background: #313244; border-radius: 12px; padding: 20px; min-width: 200px; flex: 1; }
+  .card h3 { font-size: 13px; color: #6c7086; text-transform: uppercase; letter-spacing: 1px; }
+  .card .value { font-size: 32px; font-weight: 700; margin-top: 8px; }
+  .card .detail { font-size: 12px; color: #6c7086; margin-top: 4px; }
+  .success { color: #a6e3a1; }
+  .partial { color: #f9e2af; }
+  .error { color: #f38ba8; }
+  .neutral { color: #89b4fa; }
+  table { width: 100%; border-collapse: collapse; background: #313244; border-radius: 12px; overflow: hidden; }
+  th { background: #45475a; padding: 12px 16px; text-align: left; font-size: 13px; color: #6c7086; text-transform: uppercase; letter-spacing: 1px; }
+  td { padding: 12px 16px; border-top: 1px solid #45475a; font-size: 14px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+  .badge.success { background: #a6e3a120; }
+  .badge.partial { background: #f9e2af20; }
+  .badge.error { background: #f38ba820; }
+  .section-title { color: #89b4fa; margin: 24px 0 12px; font-size: 18px; }
+  .empty { text-align: center; padding: 40px; color: #6c7086; }
+  .refresh-note { color: #6c7086; font-size: 12px; margin-top: 16px; text-align: center; }
+  .actions { display: flex; gap: 12px; margin-bottom: 24px; align-items: center; }
+  .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity .2s; }
+  .btn:hover { opacity: .85; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-primary { background: #89b4fa; color: #1e1e2e; }
+  .btn-secondary { background: #45475a; color: #cdd6f4; }
+  .run-status { font-size: 13px; margin-left: 8px; }
+  .back-link { display: inline-block; color: #6c7086; text-decoration: none; font-size: 13px; margin-bottom: 12px; }
+  .back-link:hover { color: #89b4fa; }
+</style>
+</head>
+<body>
+
+<a class="back-link" href="/">← All Automations</a>
+<h1>🔐 CoreIdentity Auto-Extend</h1>
+<p class="subtitle">Extends expiring memberships (within 30 days) · Runs every Monday 9:30 AM</p>
+
+<div class="actions">
+  <button class="btn btn-primary" onclick="triggerRun(false)" id="btn-run">▶ Run Now</button>
+  <button class="btn btn-secondary" onclick="triggerRun(true)" id="btn-dry" title="Shows what would be extended without actually doing it">👁 Preview</button>
+  <span class="run-status" id="run-status"></span>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <h3>Last Run</h3>
+    <div class="value neutral" id="last-run-time">—</div>
+    <div class="detail" id="last-run-ago"></div>
+  </div>
+  <div class="card">
+    <h3>Last Status</h3>
+    <div class="value" id="last-status">—</div>
+  </div>
+  <div class="card">
+    <h3>Extended</h3>
+    <div class="value success" id="last-extended">—</div>
+    <div class="detail" id="last-extended-detail"></div>
+  </div>
+  <div class="card">
+    <h3>Total Runs (30d)</h3>
+    <div class="value neutral" id="total-runs">—</div>
+    <div class="detail" id="total-runs-detail"></div>
+  </div>
+</div>
+
+<h2 class="section-title">Run History</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Timestamp</th>
+      <th>Status</th>
+      <th>Total</th>
+      <th>Expiring</th>
+      <th>Pending</th>
+      <th>Extended</th>
+      <th>Failed</th>
+      <th>Details</th>
+    </tr>
+  </thead>
+  <tbody id="history-body"></tbody>
+</table>
+<div class="empty" id="no-data" style="display:none">No run history yet. The automation will populate this after its first run.</div>
+
+<p class="refresh-note">
+  Data: <code>run-history.json</code> · Auto-refreshes every 60s
+</p>
+
+<script>
+async function loadData() {
+  try {
+    const resp = await fetch('run-history.json?t=' + Date.now());
+    if (!resp.ok) { document.getElementById('no-data').style.display = 'block'; return; }
+    const history = await resp.json();
+    if (!history.length) { document.getElementById('no-data').style.display = 'block'; return; }
+    document.getElementById('no-data').style.display = 'none';
+
+    history.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    // Summary cards
+    const last = history[0];
+    const ts = new Date(last.timestamp);
+    document.getElementById('last-run-time').textContent = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    const agoMs = Date.now() - ts.getTime();
+    const agoH = Math.floor(agoMs / 3600000);
+    const agoM = Math.floor((agoMs % 3600000) / 60000);
+    document.getElementById('last-run-ago').textContent = agoH > 24
+      ? Math.floor(agoH / 24) + ' days ago'
+      : agoH > 0 ? agoH + 'h ' + agoM + 'm ago' : agoM + 'm ago';
+
+    const statusEl = document.getElementById('last-status');
+    statusEl.textContent = last.status === 'success' ? '✅ Success' : last.status === 'partial' ? '⚠️ Partial' : '❌ Error';
+    statusEl.className = 'value ' + last.status;
+
+    document.getElementById('last-extended').textContent = last.extended ?? '—';
+    const extDetail = [];
+    if (last.already_pending) extDetail.push(last.already_pending + ' already pending');
+    if (last.failed) extDetail.push(last.failed + ' failed');
+    document.getElementById('last-extended-detail').textContent = extDetail.join(', ') || 'All good';
+
+    // 30-day stats
+    const thirtyDaysAgo = Date.now() - 30 * 86400000;
+    const recent = history.filter(r => new Date(r.timestamp).getTime() > thirtyDaysAgo);
+    document.getElementById('total-runs').textContent = recent.length;
+    const successCount = recent.filter(r => r.status === 'success').length;
+    const errorCount = recent.filter(r => r.status === 'error').length;
+    document.getElementById('total-runs-detail').textContent = successCount + ' success, ' + errorCount + ' errors';
+
+    // History table
+    const tbody = document.getElementById('history-body');
+    tbody.innerHTML = '';
+    for (const run of history.slice(0, 50)) {
+      const row = document.createElement('tr');
+      const t = new Date(run.timestamp);
+      const details = (run.details || []).map(d => d.name + '/' + d.role).join(', ') || run.error || '—';
+      row.innerHTML = `
+        <td>${t.toLocaleDateString()} ${t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
+        <td><span class="badge ${run.status}">${run.status}${run.dry_run ? ' (preview)' : ''}</span></td>
+        <td>${run.total_memberships ?? '—'}</td>
+        <td>${run.expiring ?? '—'}</td>
+        <td>${run.already_pending ?? '—'}</td>
+        <td>${run.extended ?? '—'}</td>
+        <td>${run.failed ?? '—'}</td>
+        <td title="${details}">${details.length > 60 ? details.slice(0, 57) + '...' : details}</td>
+      `;
+      tbody.appendChild(row);
+    }
+  } catch (e) {
+    document.getElementById('no-data').style.display = 'block';
+    document.getElementById('no-data').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function triggerRun(dryRun) {
+  const btnRun = document.getElementById('btn-run');
+  const btnDry = document.getElementById('btn-dry');
+  const status = document.getElementById('run-status');
+  btnRun.disabled = true;
+  btnDry.disabled = true;
+  status.textContent = '⏳ Starting…';
+  status.style.color = '#f9e2af';
+
+  try {
+    const url = `/api/run?dry=${dryRun}`;
+    const resp = await fetch(url, { method: 'POST' });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    status.textContent = dryRun
+      ? '👁 Preview running — shows what needs extending (no changes)…'
+      : '✅ Running — will refresh in 60s…';
+    status.style.color = dryRun ? '#89b4fa' : '#a6e3a1';
+    setTimeout(() => { loadData(); btnRun.disabled = false; btnDry.disabled = false; status.textContent = ''; }, 60000);
+    setTimeout(() => loadData(), 90000);
+  } catch (e) {
+    status.textContent = '❌ ' + e.message;
+    status.style.color = '#f38ba8';
+    btnRun.disabled = false;
+    btnDry.disabled = false;
+  }
+}
+
+loadData();
+</script>
+</body>
+</html>

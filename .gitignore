@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.browser-profile/
+# Ignore per-automation screenshot dirs, but keep docs/screenshots/
+**/screenshots/
+!docs/screenshots/
+run-history.json
+renewal-log.txt
+last-manual-run.log
+dashboard-data.json
+pipeline_data.json
+*.log
+.env

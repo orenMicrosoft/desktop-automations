@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>My Automations</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #1e1e2e; color: #cdd6f4; padding: 32px; min-height: 100vh; }
+  h1 { color: #89b4fa; margin-bottom: 6px; font-size: 28px; }
+  .subtitle { color: #6c7086; margin-bottom: 32px; font-size: 14px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 20px; }
+  .auto-card {
+    background: #313244; border-radius: 14px; padding: 24px; width: 340px;
+    display: flex; flex-direction: column; gap: 12px;
+    transition: transform .15s, box-shadow .15s; cursor: pointer; text-decoration: none; color: inherit;
+  }
+  .auto-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px #00000040; }
+  .auto-card h2 { font-size: 18px; color: #cdd6f4; display: flex; align-items: center; gap: 8px; }
+  .auto-card .desc { font-size: 13px; color: #a6adc8; line-height: 1.5; }
+  .auto-card .schedule { font-size: 12px; color: #585b70; }
+  .auto-card .status { font-size: 12px; margin-top: auto; padding-top: 8px; border-top: 1px solid #45475a; }
+  .auto-card .status .ok { color: #a6e3a1; }
+  .auto-card .status .warn { color: #f9e2af; }
+  .auto-card .status .err { color: #f38ba8; }
+  .auto-card .status .muted { color: #6c7086; }
+  .auto-card .status strong { color: #a6e3a1; }
+  .auto-card .server-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 600; }
+  .auto-card .server-badge.online { background: rgba(166,227,161,0.15); color: #a6e3a1; }
+  .auto-card .server-badge.offline { background: rgba(243,139,168,0.15); color: #f38ba8; }
+  .auto-card .server-badge.starting { background: rgba(249,226,175,0.15); color: #f9e2af; }
+  .empty { color: #6c7086; text-align: center; padding: 60px; font-size: 15px; }
+  .footer { color: #45475a; font-size: 12px; text-align: center; margin-top: 40px; }
+</style>
+</head>
+<body>
+
+<h1>🤖 My Automations</h1>
+<p class="subtitle">Click an automation to open its dashboard. <button id="e2e-btn" onclick="runAllE2E()" style="background:#cba6f7;color:#1e1e2e;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:600;font-size:13px;margin-left:12px">🧪 Run All E2E Tests</button></p>
+<div class="grid" id="grid"></div>
+<div class="empty" id="empty" style="display:none">No automations registered yet. Add entries to <code>automations.json</code>.</div>
+<p class="footer">Registry: <code>automations.json</code></p>
+
+<!-- E2E Test Modal -->
+<div id="e2e-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;display:none;align-items:center;justify-content:center">
+  <div style="background:#313244;border:1px solid #45475a;border-radius:12px;padding:24px;max-width:750px;width:90%;max-height:80vh;overflow-y:auto">
+    <button onclick="closeE2E()" style="float:right;background:none;border:none;color:#6c7086;font-size:20px;cursor:pointer">&times;</button>
+    <h2 style="color:#89b4fa;margin-bottom:16px">🧪 All Automation E2E Tests</h2>
+    <div id="e2e-results" style="font-size:13px">
+      <div style="color:#6c7086;text-align:center;padding:24px">⏳ Running tests across all automations...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const ICONS = {
+  'coreidentity': '🔐',
+  'copilot': '🤖',
+  'course': '📚',
+  'pipeline': '🚀',
+  'email': '📧',
+  'deploy': '🚀',
+  'backup': '💾',
+  'cleanup': '🧹',
+  'monitor': '📊',
+};
+
+function pickIcon(id, name) {
+  for (const [key, icon] of Object.entries(ICONS)) {
+    if (id.includes(key) || name.toLowerCase().includes(key)) return icon;
+  }
+  return '⚡';
+}
+
+async function getLastRun(folder) {
+  // Try to fetch run-history.json from the automation's dashboard server
+  // This is best-effort — may fail if server isn't running
+  try {
+    const base = folder.replace(/\\/g, '/');
+    const resp = await fetch(`run-history.json`, { signal: AbortSignal.timeout(500) });
+    if (!resp.ok) return null;
+    const history = await resp.json();
+    if (!history.length) return null;
+    history.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    return history[0];
+  } catch (_) { return null; }
+}
+
+async function load() {
+  const grid = document.getElementById('grid');
+  const empty = document.getElementById('empty');
+  try {
+    const resp = await fetch('automations.json?t=' + Date.now());
+    const autos = await resp.json();
+    if (!autos.length) { empty.style.display = 'block'; return; }
+
+    // Fetch server status from hub
+    let serverStatus = {};
+    try {
+      const sr = await fetch('/api/status');
+      serverStatus = await sr.json();
+    } catch (_) {}
+
+    for (const a of autos) {
+      const icon = pickIcon(a.id, a.name);
+      const card = document.createElement('div');
+      card.className = 'auto-card';
+      card.style.cursor = a.dashboard ? 'pointer' : 'default';
+
+      const isOnline = serverStatus[a.id]?.running;
+      const badgeClass = a.dashboard ? (isOnline ? 'online' : 'offline') : 'online';
+      const badgeText = a.dashboard ? (isOnline ? '● Online' : '○ Offline') : '⚙ Manual';
+
+      card.innerHTML = `
+        <h2>${icon} ${a.name} <span class="server-badge ${badgeClass}" id="badge-${a.id}">${badgeText}</span></h2>
+        <div class="desc">${a.description}</div>
+        <div class="schedule">⏰ ${a.schedule || 'Manual'}</div>
+        <div class="status" id="status-${a.id}"><span class="muted">Loading status…</span></div>
+      `;
+
+      if (a.dashboard) {
+        card.addEventListener('click', () => openDashboard(a));
+      }
+
+      grid.appendChild(card);
+      fetchLastRun(a);
+    }
+  } catch (e) {
+    empty.style.display = 'block';
+    empty.textContent = 'Error loading automations: ' + e.message;
+  }
+}
+
+async function openDashboard(a) {
+  const badge = document.getElementById('badge-' + a.id);
+
+  // Check if server is already running
+  try {
+    const sr = await fetch('/api/status');
+    const statuses = await sr.json();
+    if (statuses[a.id]?.running) {
+      window.open(a.dashboard, '_blank');
+      return;
+    }
+  } catch (_) {}
+
+  // Server is down — start it
+  badge.className = 'server-badge starting';
+  badge.textContent = '⏳ Starting...';
+
+  try {
+    const resp = await fetch('/api/start/' + a.id, { method: 'POST' });
+    const result = await resp.json();
+    if (result.ok) {
+      badge.className = 'server-badge online';
+      badge.textContent = '● Online';
+      window.open(a.dashboard, '_blank');
+    } else {
+      badge.className = 'server-badge offline';
+      badge.textContent = '✗ Failed';
+      setTimeout(() => { badge.className = 'server-badge offline'; badge.textContent = '○ Offline'; }, 3000);
+    }
+  } catch (_) {
+    badge.className = 'server-badge offline';
+    badge.textContent = '○ Offline';
+  }
+}
+
+async function fetchLastRun(a) {
+  const el = document.getElementById('status-' + a.id);
+  if (!a.dashboard) { el.innerHTML = '<span class="muted">No dashboard — manual trigger</span>'; return; }
+  
+  // Copilot Dashboard: fetch summary from its data endpoint
+  if (a.id === 'copilot-dashboard') {
+    try {
+      const resp = await fetch('http://localhost:8787/dashboard-data.json?t=' + Date.now(), { signal: AbortSignal.timeout(5000) });
+      if (!resp.ok) throw new Error('not found');
+      const data = await resp.json();
+      const s = data.summary;
+      const t = new Date(s.generated_at);
+      const agoMs = Date.now() - t.getTime();
+      const agoH = Math.floor(agoMs / 3600000);
+      const ago = agoH > 24 ? Math.floor(agoH/24) + 'd ago' : agoH > 0 ? agoH + 'h ago' : Math.floor(agoMs/60000) + 'm ago';
+      el.innerHTML = `✅ <span class="muted">${ago}</span> · <strong>${s.total_sessions} sessions</strong> · ${s.total_turns} turns · ~${(s.total_estimated_tokens/1000).toFixed(0)}K tokens`;
+      return;
+    } catch (_) {
+      el.innerHTML = '<span class="muted">Dashboard offline</span>';
+      return;
+    }
+  }
+
+  // CoreIdentity & others: fetch run-history.json
+  try {
+    const base = a.dashboard.substring(0, a.dashboard.lastIndexOf('/'));
+    const resp = await fetch(base + '/run-history.json?t=' + Date.now(), { signal: AbortSignal.timeout(5000) });
+    if (!resp.ok) throw new Error('not found');
+    const history = await resp.json();
+    if (!history.length) { el.innerHTML = '<span class="muted">No runs yet</span>'; return; }
+    history.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    const last = history[0];
+    const t = new Date(last.timestamp);
+    const timeStr = t.toLocaleDateString() + ' ' + t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    const agoMs = Date.now() - t.getTime();
+    const agoH = Math.floor(agoMs / 3600000);
+    const agoM = Math.floor((agoMs % 3600000) / 60000);
+    const ago = agoH > 24 ? Math.floor(agoH/24) + 'd ago' : agoH > 0 ? agoH + 'h ago' : agoM + 'm ago';
+    const icon = last.status === 'success' ? '✅' : last.status === 'partial' ? '⚠️' : '❌';
+    const parts = [];
+    if (last.extended > 0) parts.push('<strong>' + last.extended + ' extended</strong>');
+    if (last.already_pending > 0) parts.push(last.already_pending + ' pending');
+    if (last.extended === 0 && !last.already_pending) parts.push('Nothing to extend');
+    el.innerHTML = `${icon} <span class="muted">${ago}</span> · ${parts.join(' · ')}`;
+  } catch (_) {
+    el.innerHTML = '<span class="muted">Dashboard offline</span>';
+  }
+}
+
+load();
+
+// E2E Test Runner
+async function runAllE2E() {
+  const modal = document.getElementById('e2e-modal');
+  const resultsDiv = document.getElementById('e2e-results');
+  modal.style.display = 'flex';
+  resultsDiv.innerHTML = '<div style="color:#6c7086;text-align:center;padding:24px">⏳ Running tests across all automations... this may take a few minutes.</div>';
+
+  try {
+    const resp = await fetch('/api/e2e-tests', { method: 'POST' });
+    const report = await resp.json();
+    let html = '';
+    (report.suites || []).forEach(suite => {
+      const sColor = suite.failed === 0 ? '#a6e3a1' : '#f38ba8';
+      html += '<div style="margin-bottom:16px"><h3 style="color:' + sColor + ';font-size:14px;margin-bottom:8px">' +
+        suite.suite + ' (' + suite.passed + '/' + suite.total + ')</h3>';
+      (suite.results || []).forEach(r => {
+        const icon = r.passed ? '✅' : '❌';
+        const cls = r.passed ? '#a6e3a1' : '#f38ba8';
+        html += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #45475a">';
+        html += '<span style="color:' + cls + '">' + icon + ' ' + r.name + '</span>';
+        if (r.error) html += '<span style="font-size:11px;color:#f38ba8">' + r.error + '</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+    const totalColor = report.failed === 0 ? '#a6e3a1' : '#f38ba8';
+    html += '<div style="font-size:15px;font-weight:600;margin-top:12px;padding-top:12px;border-top:1px solid #45475a;color:' + totalColor + '">' +
+      report.passed + '/' + report.total + ' total tests passed</div>';
+    resultsDiv.innerHTML = html;
+  } catch (e) {
+    resultsDiv.innerHTML = '<div style="color:#f38ba8;text-align:center;padding:24px">Failed: ' + e.message + '</div>';
+  }
+}
+
+function closeE2E() {
+  document.getElementById('e2e-modal').style.display = 'none';
+}
+
+document.getElementById('e2e-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeE2E();
+});
+</script>
+</body>
+</html>
