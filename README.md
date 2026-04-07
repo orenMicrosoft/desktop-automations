@@ -13,6 +13,7 @@ A collection of local desktop automation tools for Microsoft employees. Each too
 | [**Copilot CLI Dashboard**](copilot-dashboard/) | Usage analytics for GitHub Copilot CLI — sessions, tokens, categories, corrections, parallel session detection | Daily 9 AM + on page load |
 | [**CoreIdentity Auto-Extend**](coreidentity-autoextend/) | Automatically extends expiring CoreIdentity memberships before they lapse | Weekly — Monday 9:30 AM |
 | [**Pipeline Dashboard**](pipeline-dashboard/) | Tracks PR lifecycle across Azure DevOps repos — from local branch to prod deployment | Auto-refresh + manual |
+| [**Teams Summary**](teams-summary/) | Extracts & summarizes recent Teams messages from local cache — people, subjects, links | On demand |
 | [**Automation Hub**](hub/) | Central launcher that starts/monitors all automation dashboards from one page | On demand |
 
 ---
@@ -242,6 +243,11 @@ desktop-automations/
 │   ├── dashboard.html           # Dashboard UI
 │   ├── pipeline_data.example.json # Config template
 │   └── e2e_tests.py             # E2E tests
+├── teams-summary/               # Teams message summary (port 8095)
+│   ├── dashboard_server.py      # Dashboard server + scan API
+│   ├── teams_scanner.py         # Local Teams cache scanner
+│   ├── dashboard.html           # Dashboard UI
+│   └── README.md                # Detailed docs
 └── docs/
     └── screenshots/             # Dashboard screenshots
 ```
