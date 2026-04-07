@@ -188,6 +188,26 @@ async function fetchLastRun(a) {
     }
   }
 
+  // Email Digest: fetch summary from its API
+  if (a.id === 'email-digest') {
+    try {
+      const resp = await fetch('http://localhost:8094/api/summary?t=' + Date.now(), { signal: AbortSignal.timeout(5000) });
+      if (!resp.ok) throw new Error('not found');
+      const data = await resp.json();
+      if (data.error || !data.scanned_at) { el.innerHTML = '<span class="muted">Not scanned yet</span>'; return; }
+      const t = new Date(data.scanned_at);
+      const agoMs = Date.now() - t.getTime();
+      const agoH = Math.floor(agoMs / 3600000);
+      const ago = agoH > 24 ? Math.floor(agoH/24) + 'd ago' : agoH > 0 ? agoH + 'h ago' : Math.floor(agoMs/60000) + 'm ago';
+      const c = data.counts || {};
+      el.innerHTML = `📬 <span class="muted">${ago}</span> · <strong>${data.total_unread} emails</strong> · ${c.action_required || 0} action · ${c.team || 0} team · ${c.manager || 0} manager`;
+      return;
+    } catch (_) {
+      el.innerHTML = '<span class="muted">Dashboard offline</span>';
+      return;
+    }
+  }
+
   // CoreIdentity & others: fetch run-history.json
   try {
     const base = a.dashboard.substring(0, a.dashboard.lastIndexOf('/'));

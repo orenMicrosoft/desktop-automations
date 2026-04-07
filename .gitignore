@@ -13,5 +13,6 @@ renewal-log.txt
 last-manual-run.log
 dashboard-data.json
 pipeline_data.json
+email_cache.json
 *.log
 .env

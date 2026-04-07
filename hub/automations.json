@@ -31,5 +31,27 @@
     "folder": "pipeline-dashboard",
     "cmd": ["pipeline_dashboard.py", "--no-browser"],
     "health_path": "/dashboard.html"
+  },
+  {
+    "id": "email-digest",
+    "name": "Email Digest",
+    "description": "Categorized summary of unread Outlook emails — action items, team, leadership, builds",
+    "schedule": "Manual refresh",
+    "dashboard": "http://localhost:8094/dashboard.html",
+    "port": 8094,
+    "folder": "email-digest",
+    "cmd": ["email_digest.py", "--no-browser"],
+    "health_path": "/api/health"
+  },
+  {
+    "id": "teams-summary",
+    "name": "Teams Summary",
+    "description": "Summarizes recent Teams messages from local cache — people, subjects, links, and content",
+    "schedule": "On demand",
+    "dashboard": "http://localhost:8095/dashboard.html",
+    "port": 8095,
+    "folder": "teams-summary",
+    "cmd": ["dashboard_server.py", "--no-browser"],
+    "health_path": "/dashboard.html"
   }
 ]

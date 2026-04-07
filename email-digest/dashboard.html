@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Email Digest</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #1e1e2e; color: #cdd6f4; min-height: 100vh; }
+
+  /* ── Header ─────────────────────────────────── */
+  .header {
+    background: #181825; padding: 20px 32px; border-bottom: 1px solid #313244;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  }
+  .header h1 { color: #89b4fa; font-size: 24px; }
+  .header .meta { color: #6c7086; font-size: 13px; }
+  .header .actions { display: flex; gap: 10px; align-items: center; }
+  .btn {
+    background: #89b4fa; color: #1e1e2e; border: none; border-radius: 8px;
+    padding: 8px 18px; font-weight: 600; font-size: 13px; cursor: pointer;
+    transition: background .15s;
+  }
+  .btn:hover { background: #74c7ec; }
+  .btn:disabled { opacity: 0.5; cursor: wait; }
+  .btn.secondary { background: #45475a; color: #cdd6f4; }
+  .btn.secondary:hover { background: #585b70; }
+  select { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+
+  /* ── Stats Bar ──────────────────────────────── */
+  .stats-bar {
+    display: flex; gap: 12px; padding: 16px 32px; flex-wrap: wrap;
+    background: #1e1e2e; border-bottom: 1px solid #313244;
+  }
+  .stat {
+    background: #313244; border-radius: 10px; padding: 12px 18px;
+    min-width: 130px; text-align: center;
+  }
+  .stat .num { font-size: 26px; font-weight: 700; color: #89b4fa; }
+  .stat .label { font-size: 11px; color: #6c7086; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat.red .num { color: #f38ba8; }
+  .stat.green .num { color: #a6e3a1; }
+  .stat.yellow .num { color: #f9e2af; }
+  .stat.purple .num { color: #cba6f7; }
+
+  /* ── Main Content ───────────────────────────── */
+  .content { padding: 24px 32px; }
+
+  /* ── Category Sections ──────────────────────── */
+  .category {
+    margin-bottom: 28px;
+  }
+  .category-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+    cursor: pointer; user-select: none;
+  }
+  .category-header h2 { font-size: 16px; color: #cdd6f4; }
+  .category-header .count {
+    background: #45475a; color: #a6adc8; border-radius: 12px;
+    padding: 2px 10px; font-size: 12px; font-weight: 600;
+  }
+  .category-header .chevron { color: #6c7086; transition: transform .2s; font-size: 14px; }
+  .category-header .chevron.collapsed { transform: rotate(-90deg); }
+
+  /* ── Email List ─────────────────────────────── */
+  .email-list { display: flex; flex-direction: column; gap: 4px; }
+  .email-row {
+    display: grid; grid-template-columns: 140px 200px 1fr;
+    gap: 16px; padding: 10px 14px; border-radius: 8px;
+    background: #313244; cursor: pointer; transition: background .12s;
+    align-items: start;
+  }
+  .email-row:hover { background: #45475a; }
+  .email-row .date { color: #6c7086; font-size: 12px; white-space: nowrap; padding-top: 2px; }
+  .email-row .sender { color: #89b4fa; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .email-row .subject-col { overflow: hidden; }
+  .email-row .subject { font-size: 13px; color: #cdd6f4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .email-row .preview { font-size: 11px; color: #6c7086; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+
+  /* ── Loading / Empty ────────────────────────── */
+  .loading { text-align: center; padding: 60px; color: #6c7086; }
+  .loading .spinner { font-size: 32px; animation: spin 1.2s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty-state { text-align: center; padding: 60px; color: #585b70; font-size: 15px; }
+  .empty-state .big-icon { font-size: 48px; margin-bottom: 12px; }
+
+  /* ── Toast ──────────────────────────────────── */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; background: #313244;
+    border: 1px solid #45475a; border-radius: 10px; padding: 12px 20px;
+    font-size: 13px; color: #a6e3a1; z-index: 9999;
+    opacity: 0; transition: opacity .3s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+  .toast.error { color: #f38ba8; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>📧 Email Digest</h1>
+    <div class="meta" id="scan-meta">Click Refresh to scan your inbox</div>
+  </div>
+  <div class="actions">
+    <label style="color:#6c7086;font-size:12px">Period:
+      <select id="days-select">
+        <option value="7">Last 7 days</option>
+        <option value="14">Last 14 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="60">Last 60 days</option>
+      </select>
+    </label>
+    <button class="btn" id="refresh-btn" onclick="refresh()">🔄 Refresh</button>
+  </div>
+</div>
+
+<div class="stats-bar" id="stats-bar"></div>
+
+<div class="content" id="content">
+  <div class="empty-state" id="empty-state">
+    <div class="big-icon">📬</div>
+    <div>No email data yet. Click <strong>Refresh</strong> to scan your Outlook inbox.</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const CATEGORY_META = {
+  action_required: { icon: '🔴', label: 'Action Required', color: 'red', defaultOpen: true },
+  manager:         { icon: '👤', label: 'Manager (Nir)', color: 'purple', defaultOpen: true },
+  team:            { icon: '👥', label: 'Team', color: 'green', defaultOpen: true },
+  leadership:      { icon: '🏛️', label: 'Leadership', color: 'yellow', defaultOpen: false },
+  ado_builds:      { icon: '🔧', label: 'ADO Builds & PRs', color: '', defaultOpen: false },
+  icm_incidents:   { icon: '🚨', label: 'IcM Incidents', color: '', defaultOpen: false },
+  other_people:    { icon: '💬', label: 'Other People', color: '', defaultOpen: false },
+  automated:       { icon: '🤖', label: 'Automated / Low Priority', color: '', defaultOpen: false },
+};
+
+const CATEGORY_ORDER = [
+  'action_required', 'manager', 'team', 'leadership',
+  'ado_builds', 'icm_incidents', 'other_people', 'automated'
+];
+
+let _data = null;
+const _collapsed = {};
+
+// ── Load cached data on start ──────────────────────────
+async function loadCached() {
+  try {
+    const resp = await fetch('/api/summary?t=' + Date.now());
+    const data = await resp.json();
+    if (data.error && !data.categories) {
+      return; // No data yet
+    }
+    _data = data;
+    render();
+  } catch (_) {}
+}
+
+// ── Refresh ────────────────────────────────────────────
+async function refresh() {
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Scanning...';
+
+  const days = parseInt(document.getElementById('days-select').value);
+  const content = document.getElementById('content');
+  content.innerHTML = '<div class="loading"><div class="spinner">📧</div><div style="margin-top:12px">Scanning Outlook inbox... this may take a minute.</div></div>';
+
+  try {
+    const resp = await fetch('/api/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days, max_emails: 500 }),
+    });
+    const data = await resp.json();
+    if (data.error) {
+      toast('Error: ' + data.error, true);
+      content.innerHTML = '<div class="empty-state"><div class="big-icon">❌</div><div>' + data.error + '</div></div>';
+      return;
+    }
+    _data = data;
+    render();
+    toast('Scanned ' + data.total_unread + ' emails');
+  } catch (e) {
+    toast('Failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔄 Refresh';
+  }
+}
+
+// ── Render ─────────────────────────────────────────────
+function render() {
+  if (!_data || !_data.categories) return;
+
+  // Stats bar
+  const statsBar = document.getElementById('stats-bar');
+  const c = _data.counts || {};
+  statsBar.innerHTML = `
+    <div class="stat"><div class="num">${_data.total_unread}</div><div class="label">Total Scanned</div></div>
+    <div class="stat red"><div class="num">${c.action_required || 0}</div><div class="label">Action Required</div></div>
+    <div class="stat purple"><div class="num">${c.manager || 0}</div><div class="label">Manager</div></div>
+    <div class="stat green"><div class="num">${c.team || 0}</div><div class="label">Team</div></div>
+    <div class="stat yellow"><div class="num">${c.leadership || 0}</div><div class="label">Leadership</div></div>
+    <div class="stat"><div class="num">${c.ado_builds || 0}</div><div class="label">ADO Builds</div></div>
+    <div class="stat"><div class="num">${c.icm_incidents || 0}</div><div class="label">IcM</div></div>
+    <div class="stat"><div class="num">${c.other_people || 0}</div><div class="label">Other</div></div>
+  `;
+
+  // Scan meta
+  const meta = document.getElementById('scan-meta');
+  if (_data.scanned_at) {
+    const d = new Date(_data.scanned_at);
+    meta.textContent = 'Last scan: ' + d.toLocaleString() + ' · ' + _data.total_unread + ' unread emails';
+  }
+
+  // Categories
+  const content = document.getElementById('content');
+  content.innerHTML = '';
+
+  for (const catKey of CATEGORY_ORDER) {
+    const emails = _data.categories[catKey] || [];
+    if (emails.length === 0) continue;
+    const m = CATEGORY_META[catKey];
+    const isCollapsed = _collapsed[catKey] !== undefined ? _collapsed[catKey] : !m.defaultOpen;
+
+    const section = document.createElement('div');
+    section.className = 'category';
+
+    const header = document.createElement('div');
+    header.className = 'category-header';
+    header.innerHTML = `
+      <span class="chevron ${isCollapsed ? 'collapsed' : ''}">▼</span>
+      <h2>${m.icon} ${m.label}</h2>
+      <span class="count">${emails.length}</span>
+    `;
+    header.addEventListener('click', () => {
+      _collapsed[catKey] = !_collapsed[catKey];
+      render();
+    });
+    section.appendChild(header);
+
+    if (!isCollapsed) {
+      const list = document.createElement('div');
+      list.className = 'email-list';
+      for (const email of emails) {
+        const row = document.createElement('div');
+        row.className = 'email-row';
+        row.title = 'Click to open in Outlook';
+        row.innerHTML = `
+          <div class="date">${email.received || ''}</div>
+          <div class="sender">${esc(email.sender || '')}</div>
+          <div class="subject-col">
+            <div class="subject">${esc(email.subject || '')}</div>
+            <div class="preview">${esc((email.body_preview || '').substring(0, 200))}</div>
+          </div>
+        `;
+        row.addEventListener('click', () => openEmail(email.entry_id));
+        list.appendChild(row);
+      }
+      section.appendChild(list);
+    }
+
+    content.appendChild(section);
+  }
+}
+
+// ── Open Email ─────────────────────────────────────────
+async function openEmail(entryId) {
+  if (!entryId) { toast('No email ID available', true); return; }
+  toast('Opening in Outlook...');
+  try {
+    const resp = await fetch('/api/open-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entry_id: entryId }),
+    });
+    const result = await resp.json();
+    if (!result.ok) toast('Could not open email', true);
+  } catch (e) {
+    toast('Failed: ' + e.message, true);
+  }
+}
+
+// ── Helpers ────────────────────────────────────────────
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function toast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+
+// ── Init ───────────────────────────────────────────────
+loadCached();
+</script>
+</body>
+</html>
