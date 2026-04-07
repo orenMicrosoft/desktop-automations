@@ -13,50 +13,62 @@ import webbrowser
 import http.server
 import http.client
 import threading
+import signal
 
 DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.dirname(DIR)
-HUB_PORT = int(os.environ.get("HUB_PORT", "8091"))
+HUB_PORT = 8091
 AUTOMATIONS_FILE = os.path.join(DIR, "automations.json")
 
+# Suppress noisy ConnectionResetError from browsers closing connections early
 _BENIGN_ERRORS = (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError)
-
 
 class QuietThreadingServer(http.server.ThreadingHTTPServer):
     def handle_error(self, request, client_address):
+        import sys
         exc_type = sys.exc_info()[0]
         if exc_type and issubclass(exc_type, _BENIGN_ERRORS):
             return
         super().handle_error(request, client_address)
 
-
-def _load_automations():
-    """Load automation configs from automations.json."""
-    if not os.path.exists(AUTOMATIONS_FILE):
-        return []
-    with open(AUTOMATIONS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _build_server_commands():
-    """Build server commands dynamically from automations.json."""
-    commands = {}
-    for auto in _load_automations():
-        auto_id = auto["id"]
-        folder = auto.get("folder", "")
-        if not os.path.isabs(folder):
-            folder = os.path.join(REPO_ROOT, folder)
-        if not os.path.isdir(folder):
-            continue
-
-        commands[auto_id] = {
-            "port": auto.get("port", 8080),
-            "cwd": folder,
-            "cmd": [sys.executable] + auto.get("cmd", ["dashboard_server.py"]),
-            "health_path": auto.get("health_path", "/dashboard.html"),
-        }
-    return commands
-
+# Map automation IDs to their server start commands
+SERVER_COMMANDS = {
+    "coreidentity-autoextend": {
+        "port": 8090,
+        "cwd": r"C:\Users\orenhorowitz\Code\CoreIdentityRenewal",
+        "cmd": [sys.executable, "dashboard_server.py"],
+        "health_path": "/dashboard.html",
+    },
+    "copilot-dashboard": {
+        "port": 8787,
+        "cwd": r"C:\Users\orenhorowitz\Tools\CopilotDashboard",
+        "cmd": [sys.executable, "launch.py", "--no-browser"],
+        "health_path": "/dashboard-data.json",
+    },
+    "course-workflow": {
+        "port": 8092,
+        "cwd": r"C:\Users\orenhorowitz\Code\CourseWorkflow",
+        "cmd": [sys.executable, "dashboard_server.py", "--no-browser"],
+        "health_path": "/dashboard.html",
+    },
+    "pipeline-dashboard": {
+        "port": 8093,
+        "cwd": r"C:\Users\orenhorowitz\Code\PipelineDashboard",
+        "cmd": [sys.executable, "pipeline_dashboard.py", "--no-browser"],
+        "health_path": "/dashboard.html",
+    },
+    "teams-summary": {
+        "port": 8095,
+        "cwd": r"C:\Users\orenhorowitz\desktop-automations\teams-summary",
+        "cmd": [sys.executable, "dashboard_server.py", "--no-browser"],
+        "health_path": "/dashboard.html",
+    },
+    "email-digest": {
+        "port": 8094,
+        "cwd": r"C:\Users\orenhorowitz\Code\email-digest",
+        "cmd": [sys.executable, "email_digest.py", "--no-browser"],
+        "health_path": "/api/health",
+    },
+}
 
 child_processes = {}
 
@@ -68,11 +80,12 @@ def is_port_open(port):
 
 
 def is_http_ready(port, path="/", timeout=3):
+    """Check if the server is actually responding to HTTP requests."""
     try:
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
         conn.request("HEAD", path)
         resp = conn.getresponse()
-        resp.read()
+        resp.read()  # consume any body to fully release the connection
         conn.close()
         return resp.status < 500
     except Exception:
@@ -81,8 +94,7 @@ def is_http_ready(port, path="/", timeout=3):
 
 def start_server(auto_id):
     """Start a child server if it's not already running."""
-    commands = _build_server_commands()
-    cfg = commands.get(auto_id)
+    cfg = SERVER_COMMANDS.get(auto_id)
     if not cfg:
         return False, "No server config"
 
@@ -100,6 +112,7 @@ def start_server(auto_id):
         )
         child_processes[auto_id] = proc
 
+        # Wait for server to actually respond to HTTP (not just port open)
         for _ in range(30):
             time.sleep(1)
             if proc.poll() is not None:
@@ -112,9 +125,9 @@ def start_server(auto_id):
 
 
 def get_all_status():
-    commands = _build_server_commands()
+    """Return status for all registered servers."""
     statuses = {}
-    for auto_id, cfg in commands.items():
+    for auto_id, cfg in SERVER_COMMANDS.items():
         health_path = cfg.get("health_path", "/")
         statuses[auto_id] = {
             "port": cfg["port"],
@@ -124,9 +137,9 @@ def get_all_status():
 
 
 def start_all_servers():
-    commands = _build_server_commands()
+    """Start all registered servers."""
     results = {}
-    for auto_id in commands:
+    for auto_id in SERVER_COMMANDS:
         ok, msg = start_server(auto_id)
         results[auto_id] = {"ok": ok, "message": msg}
         print(f"  {auto_id}: {msg}")
@@ -140,8 +153,8 @@ class HubHandler(http.server.SimpleHTTPRequestHandler):
     def handle(self):
         try:
             super().handle()
-        except _BENIGN_ERRORS:
-            pass
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            pass  # browser closed connection early — harmless
 
     def do_POST(self):
         if self.path == "/api/start-all":
@@ -153,14 +166,18 @@ class HubHandler(http.server.SimpleHTTPRequestHandler):
             self._json_response({"ok": ok, "message": msg})
         elif self.path == "/api/status":
             self._json_response(get_all_status())
+        elif self.path == "/api/e2e-tests":
+            import e2e_tests
+            import importlib
+            importlib.reload(e2e_tests)
+            report = e2e_tests.run_all_tests()
+            self._json_response(report)
         else:
             self.send_error(404)
 
     def do_GET(self):
         if self.path == "/api/status":
             self._json_response(get_all_status())
-        elif self.path == "/api/automations":
-            self._json_response(_load_automations())
         else:
             super().do_GET()
 
@@ -169,7 +186,6 @@ class HubHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", len(body))
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
@@ -196,10 +212,12 @@ def main():
     print("=" * 44)
     print()
 
+    # Start all child servers
     print("Starting automation servers...")
     start_all_servers()
     print()
 
+    # Start hub server
     os.chdir(DIR)
     server = QuietThreadingServer(("127.0.0.1", HUB_PORT), HubHandler)
 
