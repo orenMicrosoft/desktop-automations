@@ -53,7 +53,9 @@ for ($i = 1; $i -le $limit; $i++) {
     } catch {}
 }
 
-$results | ConvertTo-Json -Depth 3 -Compress
+$json = $results | ConvertTo-Json -Depth 3 -Compress
+[System.IO.File]::WriteAllText("$OUTPUT_FILE", $json, [System.Text.Encoding]::UTF8)
+Write-Output "OK:$($results.Count)"
 '''
 
 OPEN_EMAIL_PS = r'''
@@ -81,16 +83,22 @@ def _run_powershell(script):
 
 def fetch_emails(days=30, max_emails=500):
     """Fetch unread emails from Outlook via PowerShell COM."""
-    script = FETCH_EMAILS_PS.replace("$DAYS", str(days)).replace("$MAX_EMAILS", str(max_emails))
+    tmp = os.path.join(DIR, "_emails_tmp.json")
+    script = (FETCH_EMAILS_PS
+              .replace("$DAYS", str(days))
+              .replace("$MAX_EMAILS", str(max_emails))
+              .replace("$OUTPUT_FILE", tmp))
     raw = _run_powershell(script)
-    if not raw:
+    if not raw or not raw.startswith("OK:"):
         return []
     try:
-        data = json.loads(raw)
+        with open(tmp, "r", encoding="utf-8-sig") as f:
+            data = json.load(f)
+        os.remove(tmp)
         if isinstance(data, dict):
             data = [data]
         return data
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, FileNotFoundError, OSError):
         return []
 
 
