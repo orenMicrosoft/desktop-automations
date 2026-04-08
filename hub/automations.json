@@ -53,5 +53,16 @@
     "folder": "teams-summary",
     "cmd": ["dashboard_server.py", "--no-browser"],
     "health_path": "/dashboard.html"
+  },
+  {
+    "id": "openclaw-meni",
+    "name": "Meni (OpenClaw)",
+    "description": "Personal WhatsApp AI assistant — gateway health, WhatsApp link status, QR connect",
+    "schedule": "Always-on (gateway auto-starts)",
+    "dashboard": "http://localhost:8096/dashboard.html",
+    "port": 8096,
+    "folder": "openclaw-meni",
+    "cmd": ["dashboard_server.py", "--no-browser"],
+    "health_path": "/api/status"
   }
 ]
