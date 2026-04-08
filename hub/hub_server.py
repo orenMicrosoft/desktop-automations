@@ -68,6 +68,12 @@ SERVER_COMMANDS = {
         "cmd": [sys.executable, "email_digest.py", "--no-browser"],
         "health_path": "/api/health",
     },
+    "openclaw-meni": {
+        "port": 8096,
+        "cwd": r"C:\Users\orenhorowitz\My Automations\OpenClaw Meni",
+        "cmd": [sys.executable, "dashboard_server.py", "--no-browser"],
+        "health_path": "/api/status",
+    },
 }
 
 child_processes = {}
