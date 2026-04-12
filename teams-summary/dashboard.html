@@ -4,13 +4,12 @@
 <meta charset="utf-8"/>
 <title>Teams Summary</title>
 <style>
-:root{--bg:#0f0f1a;--card:#1a1a2e;--card-hover:#1e2240;--accent:#0f3460;--highlight:#e94560;--text:#e8e8f0;--muted:#7a829e;--border:#2a2d4a;--green:#4ade80;--yellow:#fbbf24;--blue:#60a5fa;--pill:#1a2744;--success-bg:rgba(74,222,128,.08);--error-bg:rgba(233,69,96,.08)}
+:root{--bg:#0f0f1a;--card:#1a1a2e;--card-hover:#1e2240;--accent:#0f3460;--highlight:#e94560;--text:#e8e8f0;--muted:#7a829e;--border:#2a2d4a;--green:#4ade80;--yellow:#fbbf24;--blue:#60a5fa;--pill:#1a2744;--red:#ef4444;--orange:#f97316;--purple:#a78bfa}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 a{color:var(--blue);text-decoration:none}
 a:hover{text-decoration:underline}
 
-/* Header */
 .header{background:var(--card);border-bottom:1px solid var(--border);padding:16px 28px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .header h1{font-size:1.3rem;display:flex;align-items:center;gap:10px;font-weight:600}
 .header .actions{margin-left:auto;display:flex;gap:10px;align-items:center}
@@ -19,71 +18,87 @@ a:hover{text-decoration:underline}
 .header button:disabled{opacity:.5;cursor:not-allowed}
 .header .scan-status{font-size:.8rem;color:var(--muted);min-width:100px}
 
-/* KPI strip */
+/* Sort toggle */
+.sort-toggle{display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sort-toggle button{border:none;border-radius:0;border-right:1px solid var(--border);padding:7px 12px;font-size:.8rem}
+.sort-toggle button:last-child{border-right:none}
+.sort-toggle button.active{background:var(--highlight);color:#fff}
+
 .kpi-strip{display:flex;gap:14px;padding:18px 28px;flex-wrap:wrap}
-.kpi{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 22px;min-width:140px;flex:1;transition:transform .15s}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 22px;min-width:130px;flex:1;transition:transform .15s;cursor:pointer}
 .kpi:hover{transform:translateY(-2px)}
 .kpi .label{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;font-weight:500}
 .kpi .value{font-size:1.8rem;font-weight:700;margin-top:4px}
 .kpi .sub{font-size:.72rem;color:var(--muted);margin-top:2px}
 
-/* Layout */
-.main{display:grid;grid-template-columns:1fr 340px;gap:18px;padding:0 28px 28px;align-items:start}
+.main{display:grid;grid-template-columns:1fr 320px;gap:18px;padding:0 28px 28px;align-items:start}
 @media(max-width:1000px){.main{grid-template-columns:1fr}}
 
-/* Panels */
 .panel{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden}
 .panel-title{padding:14px 18px;font-weight:600;font-size:.95rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
 .panel-title .count{color:var(--muted);font-size:.8rem;font-weight:400}
 
 /* Messages */
 .msg-list{max-height:calc(100vh - 260px);overflow-y:auto}
-.msg{padding:14px 18px;border-bottom:1px solid var(--border);cursor:default;transition:background .15s}
+.msg{padding:14px 18px;border-bottom:1px solid var(--border);transition:background .15s;position:relative}
 .msg:hover{background:var(--card-hover)}
 .msg:last-child{border-bottom:none}
-.msg .meta{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.msg.clickable{cursor:pointer}
+.msg.clickable:hover .open-hint{opacity:1}
+
+/* Relevance badge */
+.relevance-badge{display:inline-flex;align-items:center;gap:5px;font-size:.7rem;font-weight:600;padding:2px 8px;border-radius:10px;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap}
+.badge-critical{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+.badge-action{background:rgba(249,115,22,.12);color:var(--orange);border:1px solid rgba(249,115,22,.3)}
+.badge-review{background:rgba(251,191,36,.12);color:var(--yellow);border:1px solid rgba(251,191,36,.3)}
+.badge-mention{background:rgba(96,165,250,.12);color:var(--blue);border:1px solid rgba(96,165,250,.3)}
+.badge-question{background:rgba(167,139,250,.12);color:var(--purple);border:1px solid rgba(167,139,250,.3)}
+.badge-info{background:rgba(122,130,158,.1);color:var(--muted);border:1px solid rgba(122,130,158,.2)}
+
+.msg .meta{display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap}
 .msg .time{font-size:.73rem;color:var(--muted);white-space:nowrap}
-.msg .sender{font-weight:600;font-size:.9rem;color:var(--text)}
+.msg .sender{font-weight:600;font-size:.88rem;color:var(--text)}
 .msg .subject{color:var(--yellow);font-size:.84rem;margin-top:4px;display:flex;align-items:center;gap:6px}
 .msg .content{font-size:.84rem;color:var(--muted);margin-top:6px;line-height:1.5;word-break:break-word}
-.msg .content em{color:var(--text);font-style:normal}
-.day-header{padding:8px 18px;background:rgba(15,52,96,.4);font-size:.78rem;font-weight:600;letter-spacing:.5px;color:var(--muted);position:sticky;top:0;z-index:1;backdrop-filter:blur(8px)}
+.msg .content em{color:var(--text);font-style:normal;background:rgba(96,165,250,.15);border-radius:2px;padding:0 2px}
+.msg .open-hint{position:absolute;right:14px;top:14px;font-size:.7rem;color:var(--blue);opacity:0;transition:opacity .2s;display:flex;align-items:center;gap:4px}
+.section-header{padding:10px 18px;background:rgba(15,52,96,.4);font-size:.78rem;font-weight:600;letter-spacing:.5px;color:var(--muted);position:sticky;top:0;z-index:1;backdrop-filter:blur(8px);display:flex;justify-content:space-between}
 
 /* Sidebar */
 .sidebar{display:flex;flex-direction:column;gap:16px}
 .list-scroll{max-height:200px;overflow-y:auto}
 .people-list,.subject-list,.links-list{padding:0;list-style:none}
-.people-list li,.subject-list li,.links-list li{padding:8px 18px;font-size:.84rem;border-bottom:1px solid var(--border);transition:background .15s}
+.people-list li,.subject-list li,.links-list li{padding:8px 18px;font-size:.84rem;border-bottom:1px solid var(--border);transition:background .15s;cursor:pointer}
 .people-list li:hover,.subject-list li:hover,.links-list li:hover{background:var(--card-hover)}
 .people-list li:last-child,.subject-list li:last-child,.links-list li:last-child{border-bottom:none}
 .links-list li{word-break:break-all;font-size:.8rem}
 
-/* Filter bar */
-.filter-bar{padding:10px 18px;border-bottom:1px solid var(--border);display:flex;gap:8px}
+.filter-bar{padding:10px 18px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center}
 .filter-bar input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:.85rem;transition:border-color .2s}
 .filter-bar input:focus{outline:none;border-color:var(--blue)}
 .filter-bar input::placeholder{color:var(--muted)}
+.filter-bar .clear-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.9rem;padding:4px 8px}
+.filter-bar .clear-btn:hover{color:var(--text)}
 
-/* Status states */
-.error-banner{background:var(--error-bg);border:1px solid rgba(233,69,96,.3);border-radius:8px;padding:14px 18px;margin:18px 28px;color:var(--highlight);font-size:.9rem;display:flex;align-items:center;gap:10px}
-.error-banner .icon{font-size:1.2rem}
+.error-banner{background:rgba(233,69,96,.08);border:1px solid rgba(233,69,96,.3);border-radius:8px;padding:14px 18px;margin:18px 28px;color:var(--highlight);font-size:.9rem;display:flex;align-items:center;gap:10px}
 .scanning-overlay{text-align:center;padding:40px;color:var(--muted)}
 .scanning-overlay .spinner{display:inline-block;width:24px;height:24px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin-bottom:12px}
 @keyframes spin{to{transform:rotate(360deg)}}
 .empty{padding:40px 20px;text-align:center;color:var(--muted);font-size:.9rem;line-height:1.5}
 .empty .icon{font-size:2rem;margin-bottom:8px}
 
-/* Scrollbar */
 ::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 
-/* Pill tags */
 .pill{display:inline-block;background:var(--pill);border-radius:12px;padding:2px 10px;font-size:.73rem;margin:1px 3px;border:1px solid var(--border)}
-
-/* Link categories */
 .link-icon{margin-right:4px;font-size:.85rem}
+
+/* Legend bar */
+.legend{display:flex;gap:12px;padding:6px 28px;flex-wrap:wrap;align-items:center}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:.72rem;color:var(--muted)}
+.legend-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
 </style>
 </head>
 <body>
@@ -103,16 +118,29 @@ a:hover{text-decoration:underline}
 </div>
 
 <div id="errorBanner"></div>
+
+<div class="legend" id="legend" style="display:none">
+  <span style="font-size:.75rem;font-weight:600;color:var(--muted)">Priority:</span>
+  <span class="legend-item"><span class="legend-dot" style="background:var(--red)"></span>Critical</span>
+  <span class="legend-item"><span class="legend-dot" style="background:var(--orange)"></span>Action needed</span>
+  <span class="legend-item"><span class="legend-dot" style="background:var(--yellow)"></span>Review</span>
+  <span class="legend-item"><span class="legend-dot" style="background:var(--blue)"></span>Mention</span>
+  <span class="legend-item"><span class="legend-dot" style="background:var(--purple)"></span>Question</span>
+  <span class="legend-item"><span class="legend-dot" style="background:var(--muted)"></span>FYI</span>
+  <span style="font-size:.72rem;color:var(--muted);margin-left:auto">Click a message to open in Teams</span>
+</div>
+
 <div class="kpi-strip" id="kpis"></div>
 
 <div class="main">
   <div class="panel" id="messagesPanel">
     <div class="panel-title">
-      <span>Recent Messages</span>
+      <span>Messages — sorted by relevance</span>
       <span class="count" id="msgCount"></span>
     </div>
     <div class="filter-bar">
       <input type="text" id="searchBox" placeholder="🔍 Filter by name, subject, or content…" oninput="renderMessages()"/>
+      <button class="clear-btn" onclick="document.getElementById('searchBox').value='';renderMessages()" title="Clear filter">✕</button>
     </div>
     <div class="msg-list" id="msgList">
       <div class="scanning-overlay">
@@ -124,31 +152,16 @@ a:hover{text-decoration:underline}
 
   <div class="sidebar">
     <div class="panel">
-      <div class="panel-title">
-        <span>👥 People</span>
-        <span class="count" id="peopleCount"></span>
-      </div>
-      <div class="list-scroll">
-        <ul class="people-list" id="peopleList"></ul>
-      </div>
+      <div class="panel-title"><span>👥 People</span><span class="count" id="peopleCount"></span></div>
+      <div class="list-scroll"><ul class="people-list" id="peopleList"></ul></div>
     </div>
     <div class="panel">
-      <div class="panel-title">
-        <span>📌 Subjects</span>
-        <span class="count" id="subjectCount"></span>
-      </div>
-      <div class="list-scroll">
-        <ul class="subject-list" id="subjectList"></ul>
-      </div>
+      <div class="panel-title"><span>📌 Subjects</span><span class="count" id="subjectCount"></span></div>
+      <div class="list-scroll"><ul class="subject-list" id="subjectList"></ul></div>
     </div>
     <div class="panel">
-      <div class="panel-title">
-        <span>🔗 Links</span>
-        <span class="count" id="linkCount"></span>
-      </div>
-      <div class="list-scroll">
-        <ul class="links-list" id="linksList"></ul>
-      </div>
+      <div class="panel-title"><span>🔗 Links</span><span class="count" id="linkCount"></span></div>
+      <div class="list-scroll"><ul class="links-list" id="linksList"></ul></div>
     </div>
   </div>
 </div>
@@ -156,6 +169,15 @@ a:hover{text-decoration:underline}
 <script>
 let DATA = null;
 let SCANNING = false;
+
+const BADGE_CONFIG = {
+  critical: { icon: '🔴', label: 'Critical', css: 'badge-critical' },
+  action:   { icon: '🟠', label: 'Action',   css: 'badge-action' },
+  review:   { icon: '🟡', label: 'Review',   css: 'badge-review' },
+  mention:  { icon: '🔵', label: 'Mention',  css: 'badge-mention' },
+  question: { icon: '❓', label: 'Question', css: 'badge-question' },
+  info:     { icon: '⚪', label: 'FYI',      css: 'badge-info' },
+};
 
 async function loadData() {
   try {
@@ -174,29 +196,21 @@ async function triggerScan() {
   btn.disabled = true;
   SCANNING = true;
   status.textContent = '⏳ Scanning…';
-
-  // Show scanning overlay in messages area
   document.getElementById('msgList').innerHTML = `
     <div class="scanning-overlay">
       <div class="spinner"></div>
       <div>Scanning Teams cache (${days} day${days > 1 ? 's' : ''})…</div>
       <div style="font-size:.75rem;margin-top:8px;color:var(--muted)">This may take 10-30 seconds</div>
     </div>`;
-
   try {
     await fetch(`/api/scan?days=${days}`, { method: 'POST' });
-    // Poll until scan completes
     let attempts = 0;
-    const startedAt = DATA?.scanned_at;
     const poll = setInterval(async () => {
       attempts++;
       try {
-        // Check if still scanning
         const scanResp = await fetch('/api/scanning');
         const scanStatus = await scanResp.json();
-
         if (!scanStatus.scanning || attempts > 90) {
-          // Scan finished — load new data
           const resp = await fetch('/api/scan-data');
           const data = await resp.json();
           clearInterval(poll);
@@ -231,83 +245,64 @@ function render() {
   if (!DATA) return;
 
   const banner = document.getElementById('errorBanner');
-  if (DATA.error) {
-    banner.innerHTML = `<div class="error-banner"><span class="icon">⚠️</span><span>${esc(DATA.error)}</span></div>`;
-  } else {
-    banner.innerHTML = '';
-  }
+  banner.innerHTML = DATA.error
+    ? `<div class="error-banner"><span>⚠️</span><span>${esc(DATA.error)}</span></div>`
+    : '';
 
-  const scannedAt = DATA.scanned_at ? new Date(DATA.scanned_at).toLocaleTimeString() : '—';
   if (!SCANNING) {
-    const statusEl = document.getElementById('scanStatus');
-    if (DATA.error) {
-      statusEl.textContent = `⚠️ ${scannedAt}`;
-    } else {
-      statusEl.textContent = `Last scan: ${scannedAt}`;
-    }
+    const scannedAt = DATA.scanned_at ? new Date(DATA.scanned_at).toLocaleTimeString() : '—';
+    document.getElementById('scanStatus').textContent = DATA.error ? `⚠️ ${scannedAt}` : `Last scan: ${scannedAt}`;
   }
 
-  // KPIs
   const msgs = DATA.messages || [];
   const people = DATA.people || [];
   const subjects = DATA.subjects || [];
   const links = DATA.links || [];
 
-  // Count unique days
-  const uniqueDays = new Set(msgs.map(m => m.time?.slice(0, 10)).filter(Boolean));
+  // Count by relevance
+  const counts = {};
+  msgs.forEach(m => { const l = m.relevance_label || 'info'; counts[l] = (counts[l]||0) + 1; });
+  const actionable = (counts.critical||0) + (counts.action||0) + (counts.review||0) + (counts.mention||0);
+
+  document.getElementById('legend').style.display = msgs.length ? 'flex' : 'none';
 
   document.getElementById('kpis').innerHTML = `
-    <div class="kpi">
-      <div class="label">Messages</div>
+    <div class="kpi" onclick="filterByLabel('')" title="Show all">
+      <div class="label">Total Messages</div>
       <div class="value">${msgs.length}</div>
-      <div class="sub">${uniqueDays.size} day${uniqueDays.size !== 1 ? 's' : ''}</div>
+      <div class="sub">in cache</div>
+    </div>
+    <div class="kpi" onclick="filterByLabel('critical,action')" title="Filter critical + action" style="border-color:${actionable ? 'var(--orange)' : 'var(--border)'}">
+      <div class="label">🔥 Needs Attention</div>
+      <div class="value" style="color:${actionable ? 'var(--orange)' : 'var(--text)'}">${actionable}</div>
+      <div class="sub">critical + action + review + mention</div>
+    </div>
+    <div class="kpi" onclick="filterByLabel('question')" title="Filter questions">
+      <div class="label">❓ Questions</div>
+      <div class="value">${counts.question||0}</div>
+      <div class="sub">awaiting response</div>
     </div>
     <div class="kpi">
-      <div class="label">People</div>
+      <div class="label">👥 People</div>
       <div class="value">${people.length}</div>
-      <div class="sub">unique contacts</div>
-    </div>
-    <div class="kpi">
-      <div class="label">Conversations</div>
-      <div class="value">${subjects.length}</div>
-      <div class="sub">active threads</div>
-    </div>
-    <div class="kpi">
-      <div class="label">Shared Links</div>
-      <div class="value">${links.length}</div>
-      <div class="sub">work items & PRs</div>
+      <div class="sub">${subjects.length} threads · ${links.length} links</div>
     </div>`;
 
-  // Sidebar: People
+  // Sidebar
   document.getElementById('peopleCount').textContent = people.length;
-  const pl = document.getElementById('peopleList');
-  if (people.length) {
-    pl.innerHTML = people.map(p =>
-      `<li onclick="filterBy('${esc(p)}')" style="cursor:pointer" title="Click to filter">${esc(p)}</li>`
-    ).join('');
-  } else {
-    pl.innerHTML = '<li class="empty" style="padding:20px;text-align:center">No people found</li>';
-  }
+  document.getElementById('peopleList').innerHTML = people.length
+    ? people.map(p => `<li onclick="filterBy('${esc(p)}')" title="Filter">${esc(p)}</li>`).join('')
+    : '<li class="empty" style="padding:20px;text-align:center;cursor:default">No people found</li>';
 
-  // Sidebar: Subjects
   document.getElementById('subjectCount').textContent = subjects.length;
-  const sl = document.getElementById('subjectList');
-  if (subjects.length) {
-    sl.innerHTML = subjects.map(s =>
-      `<li onclick="filterBy('${esc(s).slice(0,30)}')" style="cursor:pointer" title="Click to filter">${esc(s)}</li>`
-    ).join('');
-  } else {
-    sl.innerHTML = '<li class="empty" style="padding:20px;text-align:center">No subjects found</li>';
-  }
+  document.getElementById('subjectList').innerHTML = subjects.length
+    ? subjects.map(s => `<li onclick="filterBy('${esc(s).slice(0,30)}')" title="Filter">${esc(s)}</li>`).join('')
+    : '<li class="empty" style="padding:20px;text-align:center;cursor:default">No subjects found</li>';
 
-  // Sidebar: Links
   document.getElementById('linkCount').textContent = links.length;
-  const ll = document.getElementById('linksList');
-  if (links.length) {
-    ll.innerHTML = links.slice(0, 25).map(u => `<li>${linkIcon(u)}<a href="${esc(u)}" target="_blank">${shortenUrl(u)}</a></li>`).join('');
-  } else {
-    ll.innerHTML = '<li class="empty" style="padding:20px;text-align:center">No links found</li>';
-  }
+  document.getElementById('linksList').innerHTML = links.length
+    ? links.slice(0,25).map(u => `<li>${linkIcon(u)}<a href="${esc(u)}" target="_blank">${shortenUrl(u)}</a></li>`).join('')
+    : '<li class="empty" style="padding:20px;text-align:center;cursor:default">No links found</li>';
 
   renderMessages();
 }
@@ -317,20 +312,47 @@ function filterBy(text) {
   renderMessages();
 }
 
+function filterByLabel(labels) {
+  if (!labels) {
+    document.getElementById('searchBox').value = '';
+  } else {
+    document.getElementById('searchBox').value = ':' + labels;
+  }
+  renderMessages();
+}
+
 function renderMessages() {
   const container = document.getElementById('msgList');
   const countEl = document.getElementById('msgCount');
   if (!DATA || !DATA.messages) return;
 
-  const filter = (document.getElementById('searchBox').value || '').toLowerCase();
+  const rawFilter = (document.getElementById('searchBox').value || '').trim();
+  let labelFilter = null;
+  let textFilter = '';
+
+  // Special filter: ":critical,action" filters by relevance label
+  if (rawFilter.startsWith(':')) {
+    labelFilter = rawFilter.slice(1).split(',').map(s => s.trim().toLowerCase());
+  } else {
+    textFilter = rawFilter.toLowerCase();
+  }
+
   const msgs = DATA.messages.filter(m => {
-    if (!filter) return true;
+    if (labelFilter) {
+      const ml = m.relevance_label || 'info';
+      // "critical,action" should also match review and mention for the "Needs Attention" KPI
+      const expanded = labelFilter.includes('critical') && labelFilter.includes('action')
+        ? [...labelFilter, 'review', 'mention']
+        : labelFilter;
+      return expanded.includes(ml);
+    }
+    if (!textFilter) return true;
     const haystack = [
-      m.time, m.subject || '',
+      m.time, m.subject || '', m.relevance_label || '',
       ...(m.senders || []),
       ...(m.content || [])
     ].join(' ').toLowerCase();
-    return haystack.includes(filter);
+    return haystack.includes(textFilter);
   });
 
   countEl.textContent = `${msgs.length} of ${DATA.messages.length}`;
@@ -349,25 +371,47 @@ function renderMessages() {
     return;
   }
 
-  // Group by day
-  const byDay = {};
+  // Group messages by relevance tier
+  const tiers = [
+    { labels: ['critical'], title: '🔴 Critical — Immediate attention needed', msgs: [] },
+    { labels: ['action'],   title: '🟠 Action Required', msgs: [] },
+    { labels: ['review'],   title: '🟡 Review Requests', msgs: [] },
+    { labels: ['mention'],  title: '🔵 You were mentioned', msgs: [] },
+    { labels: ['question'], title: '❓ Questions', msgs: [] },
+    { labels: ['info'],     title: '⚪ Informational', msgs: [] },
+  ];
+
   msgs.forEach(m => {
-    const day = m.time?.slice(0, 10) || 'Unknown';
-    (byDay[day] = byDay[day] || []).push(m);
+    const label = m.relevance_label || 'info';
+    const tier = tiers.find(t => t.labels.includes(label));
+    if (tier) tier.msgs.push(m);
   });
 
   let html = '';
-  Object.keys(byDay).sort().reverse().forEach(day => {
-    const dayLabel = formatDay(day);
-    html += `<div class="day-header">${dayLabel} — ${byDay[day].length} message${byDay[day].length > 1 ? 's' : ''}</div>`;
-    byDay[day].forEach(m => {
+  tiers.forEach(tier => {
+    if (!tier.msgs.length) return;
+    html += `<div class="section-header"><span>${tier.title}</span><span>${tier.msgs.length}</span></div>`;
+    tier.msgs.forEach(m => {
+      const badge = BADGE_CONFIG[m.relevance_label || 'info'];
       const time = formatTime(m.time);
-      const senders = (m.senders || []).map(s => `<span class="pill">${esc(s)}</span>`).join(' ') || '<span style="color:var(--muted)">Unknown sender</span>';
-      html += `<div class="msg">`;
-      html += `<div class="meta"><span class="time">${time}</span><span class="sender">${senders}</span></div>`;
+      const day = formatDayShort(m.time);
+      const senders = (m.senders || []).map(s => `<span class="pill">${esc(s)}</span>`).join(' ')
+        || '<span style="color:var(--muted)">Unknown</span>';
+      const hasLink = m.teams_link;
+      const clickAttr = hasLink
+        ? ` class="msg clickable" onclick="window.open('${esc(m.teams_link)}','_blank')" title="Open in Teams"`
+        : ` class="msg"`;
+
+      html += `<div${clickAttr}>`;
+      if (hasLink) html += `<div class="open-hint">↗ Open in Teams</div>`;
+      html += `<div class="meta">`;
+      html += `<span class="relevance-badge ${badge.css}">${badge.icon} ${badge.label}</span>`;
+      html += `<span class="time">${day} ${time}</span>`;
+      html += `<span class="sender">${senders}</span>`;
+      html += `</div>`;
       if (m.subject) html += `<div class="subject"><span>📌</span> ${esc(m.subject)}</div>`;
       if (m.content && m.content.length) {
-        html += `<div class="content">${m.content.map(c => highlightFilter(esc(c.slice(0, 300)), filter)).join('<br/>')}</div>`;
+        html += `<div class="content">${m.content.map(c => highlightFilter(esc(c.slice(0, 300)), textFilter)).join('<br/>')}</div>`;
       }
       html += '</div>';
     });
@@ -379,7 +423,7 @@ function renderMessages() {
 function highlightFilter(text, filter) {
   if (!filter || filter.length < 2) return text;
   const escaped = filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return text.replace(new RegExp(`(${escaped})`, 'gi'), '<em style="background:rgba(96,165,250,.2);border-radius:2px;padding:0 2px">$1</em>');
+  return text.replace(new RegExp(`(${escaped})`, 'gi'), '<em>$1</em>');
 }
 
 function formatTime(iso) {
@@ -390,15 +434,16 @@ function formatTime(iso) {
   } catch { return iso.slice(11, 16); }
 }
 
-function formatDay(iso) {
-  if (!iso || iso === 'Unknown') return 'Unknown date';
-  const d = new Date(iso + 'T12:00:00Z');
+function formatDayShort(iso) {
+  if (!iso) return '';
+  const dayStr = iso.slice(0, 10);
   const now = new Date();
   const today = now.toISOString().slice(0,10);
   const yest = new Date(now - 86400000).toISOString().slice(0,10);
-  if (iso === today) return '📅 Today';
-  if (iso === yest) return '📅 Yesterday';
-  return '📅 ' + d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  if (dayStr === today) return 'Today';
+  if (dayStr === yest) return 'Yesterday';
+  const d = new Date(dayStr + 'T12:00:00Z');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
 function linkIcon(u) {
@@ -429,7 +474,6 @@ function esc(s) {
   return d.innerHTML;
 }
 
-// Auto-load on start
 loadData();
 </script>
 </body>
