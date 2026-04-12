@@ -148,34 +148,80 @@ async function startGateway() {
 }
 
 let qrPolling = null;
+let qrCountdown = null;
+let qrSecondsLeft = 15;
 
 async function connectWhatsApp() {
   const section = document.getElementById('qr-section');
   section.style.display = '';
   document.getElementById('qr-status').textContent = '⏳ Starting WhatsApp login...';
+  document.getElementById('btn-connect').disabled = true;
 
   await fetch('/api/connect-whatsapp', { method: 'POST' });
 
-  // Poll for QR
+  // Wait a moment for QR to generate, then start polling
+  setTimeout(startQrPolling, 2000);
+}
+
+function startQrPolling() {
   if (qrPolling) clearInterval(qrPolling);
+  if (qrCountdown) clearInterval(qrCountdown);
+  qrSecondsLeft = 15;
+
+  // Poll for QR every 2 seconds
   qrPolling = setInterval(async () => {
     try {
       const resp = await fetch('/api/qr');
       const d = await resp.json();
       if (d.connected) {
-        clearInterval(qrPolling);
-        section.style.display = 'none';
+        stopQrPolling();
+        document.getElementById('qr-section').style.display = 'none';
+        document.getElementById('btn-connect').disabled = false;
         refresh();
         return;
       }
       if (d.qr) {
         document.getElementById('qr-code').textContent = d.qr;
-        document.getElementById('qr-status').textContent = '📱 Scan now! QR auto-refreshes.';
+        // If QR is fresh (age < 3s), reset countdown
+        if (d.age < 3) {
+          qrSecondsLeft = 15;
+        }
+        updateQrStatus();
       } else {
         document.getElementById('qr-status').textContent = '⏳ Generating QR code...';
       }
     } catch (_) {}
   }, 2000);
+
+  // Countdown timer - updates every second
+  qrCountdown = setInterval(() => {
+    qrSecondsLeft--;
+    if (qrSecondsLeft <= 0) {
+      // QR expired, restart login to get a fresh one
+      document.getElementById('qr-status').innerHTML = '🔄 <span style="color:#f9e2af">QR expired — refreshing...</span>';
+      restartQrCapture();
+      return;
+    }
+    updateQrStatus();
+  }, 1000);
+}
+
+function updateQrStatus() {
+  const el = document.getElementById('qr-status');
+  const color = qrSecondsLeft <= 5 ? '#f38ba8' : qrSecondsLeft <= 10 ? '#f9e2af' : '#a6e3a1';
+  el.innerHTML = `📱 Scan now! Refreshes in <span style="color:${color};font-weight:bold">${qrSecondsLeft}s</span>`;
+}
+
+async function restartQrCapture() {
+  // Restart the login process for a fresh QR
+  await fetch('/api/connect-whatsapp', { method: 'POST' });
+  qrSecondsLeft = 15;
+  // Keep polling — the new QR will appear automatically
+}
+
+function stopQrPolling() {
+  if (qrPolling) { clearInterval(qrPolling); qrPolling = null; }
+  if (qrCountdown) { clearInterval(qrCountdown); qrCountdown = null; }
 }
 
 refresh();

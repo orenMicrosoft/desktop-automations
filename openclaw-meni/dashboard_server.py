@@ -111,43 +111,55 @@ def start_gateway():
 
 
 _qr_process = None
-_qr_lines = []
+_qr_blocks = []       # list of complete QR blocks (each is a string)
+_qr_current = []      # lines of the QR block currently being captured
 _qr_lock = threading.Lock()
 _qr_connected = False
+_qr_last_time = 0     # timestamp of last QR block completion
+QR_BLOCK_SIZE = 29    # expected lines in a WhatsApp QR block
 
 
 def start_qr_capture():
     """Start WhatsApp login and capture QR codes."""
-    global _qr_process, _qr_lines, _qr_connected
+    global _qr_process, _qr_blocks, _qr_current, _qr_connected, _qr_last_time
     if not OPENCLAW_INDEX:
         return False
 
     with _qr_lock:
         if _qr_process and _qr_process.poll() is None:
             _qr_process.kill()
-        _qr_lines = []
+            _qr_process.wait()
+        _qr_blocks = []
+        _qr_current = []
         _qr_connected = False
+        _qr_last_time = 0
 
     def _reader():
-        global _qr_process, _qr_lines, _qr_connected
+        global _qr_process, _qr_blocks, _qr_current, _qr_connected, _qr_last_time
         proc = subprocess.Popen(
             [NODE_EXE, OPENCLAW_INDEX, "channels", "login", "--channel", "whatsapp"],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             env={**os.environ, "NO_COLOR": "1"},
         )
         _qr_process = proc
-        buf = ""
         for raw in iter(proc.stdout.readline, b""):
             line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-            buf += line + "\n"
-            # Detect QR block characters
-            if any(c in line for c in "▄█▀"):
-                with _qr_lock:
-                    _qr_lines.append(line)
+            is_qr_line = any(c in line for c in "▄█▀")
             # Detect successful connection
             if "ready" in line.lower() or "linked" in line.lower() or "authenticated" in line.lower():
                 with _qr_lock:
                     _qr_connected = True
+                continue
+            if is_qr_line:
+                with _qr_lock:
+                    # If current block is full, a new QR is starting
+                    if len(_qr_current) >= QR_BLOCK_SIZE:
+                        _qr_current = []
+                    _qr_current.append(line)
+                    # When we have a complete block, save it
+                    if len(_qr_current) >= QR_BLOCK_SIZE:
+                        _qr_blocks.append("\n".join(_qr_current))
+                        _qr_last_time = time.time()
 
     t = threading.Thread(target=_reader, daemon=True)
     t.start()
@@ -155,14 +167,14 @@ def start_qr_capture():
 
 
 def get_latest_qr():
-    """Return the most recent QR block (last ~29 lines of block chars)."""
+    """Return the most recent QR block and its age in seconds."""
     with _qr_lock:
         if _qr_connected:
-            return None  # connected, no QR needed
-        qr = [l for l in _qr_lines if any(c in l for c in "▄█▀")]
-        if len(qr) >= 20:
-            return "\n".join(qr[-29:])
-    return ""
+            return None, 0  # connected, no QR needed
+        if _qr_blocks:
+            age = time.time() - _qr_last_time
+            return _qr_blocks[-1], age
+    return "", 0
 
 
 class DashboardHandler(http.server.SimpleHTTPRequestHandler):
@@ -182,11 +194,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 "group_name": GROUP_NAME,
             })
         elif self.path == "/api/qr":
-            qr = get_latest_qr()
+            qr, age = get_latest_qr()
             if qr is None:
-                self._json({"connected": True, "qr": ""})
+                self._json({"connected": True, "qr": "", "age": 0})
             else:
-                self._json({"connected": False, "qr": qr})
+                self._json({"connected": False, "qr": qr, "age": round(age, 1)})
         elif self.path == "/dashboard-data.json":
             # For hub health check compatibility
             gw = gateway_healthy()
