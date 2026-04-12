@@ -1,231 +1,437 @@
 <!DOCTYPE html>
-<html lang="he" dir="rtl">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>🐾 Meni — Personal AI Assistant</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐾 Meni — Dashboard</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --bg-primary: #0a0e14;
+    --bg-secondary: #111820;
+    --bg-card: #151d28;
+    --bg-card-hover: #1a2433;
+    --bg-elevated: #1e2a3a;
+    --border: #1e2a3a;
+    --border-light: #2a3a4e;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #484f58;
+    --accent: #e94560;
+    --accent-hover: #ff5a75;
+    --accent-glow: rgba(233, 69, 96, 0.15);
+    --green: #3fb950;
+    --green-bg: rgba(63, 185, 80, 0.1);
+    --yellow: #d29922;
+    --yellow-bg: rgba(210, 153, 34, 0.1);
+    --red: #f85149;
+    --red-bg: rgba(248, 81, 73, 0.1);
+    --blue: #58a6ff;
+    --purple: #bc8cff;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --shadow: 0 2px 12px rgba(0,0,0,0.3);
+  }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Segoe UI', sans-serif; background: #0d1117; color: #cdd6f4; min-height: 100vh; padding: 32px; direction: ltr; }
-  h1 { color: #e94560; font-size: 32px; margin-bottom: 4px; }
-  .subtitle { color: #6c7086; font-size: 14px; margin-bottom: 32px; }
-  .grid { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 24px; }
-  .card {
-    background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px;
-    flex: 1 1 300px; min-width: 280px; max-width: 500px;
+
+  body {
+    font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    line-height: 1.5;
   }
-  .card h2 { font-size: 16px; color: #89b4fa; margin-bottom: 12px; }
-  .row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-bottom: 1px solid #21262d; }
-  .row:last-child { border-bottom: none; }
-  .label { color: #6c7086; }
-  .value { color: #cdd6f4; font-weight: 500; }
-  .ok { color: #a6e3a1; }
-  .warn { color: #f9e2af; }
-  .err { color: #f38ba8; }
-  .badge { display: inline-block; padding: 2px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; }
-  .badge.online { background: rgba(166,227,161,0.15); color: #a6e3a1; }
-  .badge.offline { background: rgba(243,139,168,0.15); color: #f38ba8; }
-  .badge.warn { background: rgba(249,226,175,0.15); color: #f9e2af; }
-  button {
-    background: #e94560; color: #fff; border: none; border-radius: 8px;
-    padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer;
-    transition: background .15s;
+
+  .app { display: flex; min-height: 100vh; }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: 220px; min-height: 100vh; background: var(--bg-secondary);
+    border-right: 1px solid var(--border); padding: 24px 0;
+    display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 10;
   }
-  button:hover { background: #d63851; }
-  button:disabled { background: #45475a; cursor: not-allowed; }
-  .qr-section { text-align: center; margin-top: 20px; }
-  .qr-box { background: #fff; display: inline-block; padding: 20px; border-radius: 12px; margin-top: 12px; }
+  .sidebar-brand { padding: 0 20px; margin-bottom: 32px; }
+  .sidebar-brand h1 { font-size: 22px; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
+  .sidebar-brand p { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .sidebar-nav { flex: 1; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 20px;
+    color: var(--text-secondary); font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: all .15s; border-left: 3px solid transparent; text-decoration: none;
+  }
+  .nav-item:hover { color: var(--text-primary); background: rgba(255,255,255,0.03); }
+  .nav-item.active { color: var(--accent); background: var(--accent-glow); border-left-color: var(--accent); }
+  .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+  .nav-badge {
+    margin-left: auto; background: var(--accent); color: #fff;
+    font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px;
+  }
+  .sidebar-footer { padding: 16px 20px; border-top: 1px solid var(--border); }
+  .sidebar-footer a {
+    display: flex; align-items: center; gap: 8px; color: var(--text-muted);
+    font-size: 12px; text-decoration: none; padding: 6px 0; transition: color .15s;
+  }
+  .sidebar-footer a:hover { color: var(--blue); }
+
+  .main { margin-left: 220px; flex: 1; padding: 28px 36px; min-height: 100vh; }
+
+  /* ── Hero Cards ── */
+  .hero { display: flex; gap: 16px; margin-bottom: 28px; }
+  .hero-card {
+    flex: 1; background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; transition: border-color .2s;
+  }
+  .hero-card:hover { border-color: var(--border-light); }
+  .hero-card.ok { border-left: 3px solid var(--green); }
+  .hero-card.err { border-left: 3px solid var(--red); }
+  .hero-card.warn { border-left: 3px solid var(--yellow); }
+  .hero-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 8px; }
+  .hero-value { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .hero-sub { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
+
+  .pulse { display: inline-block; width: 10px; height: 10px; border-radius: 50%; animation: pulse 2s infinite; }
+  .pulse.green { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .pulse.red { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  .pulse.yellow { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  /* ── Section ── */
+  .section-title {
+    font-size: 14px; font-weight: 600; color: var(--text-secondary);
+    margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* ── Config Grid ── */
+  .config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 28px; }
+  .config-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; }
+  .config-label { font-size: 11px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+  .config-value { font-size: 14px; font-weight: 600; margin-top: 4px; }
+
+  /* ── Buttons ── */
+  .btn-group { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px;
+    font-weight: 600; cursor: pointer; border: 1px solid transparent;
+    transition: all .15s; font-family: inherit;
+  }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: var(--accent-hover); box-shadow: 0 0 20px var(--accent-glow); }
+  .btn-secondary { background: var(--bg-elevated); color: var(--text-secondary); border-color: var(--border-light); }
+  .btn-secondary:hover { color: var(--text-primary); background: var(--bg-card-hover); }
+  .btn-danger { background: var(--red-bg); color: var(--red); border-color: rgba(248,81,73,0.3); }
+  .btn-danger:hover { background: rgba(248,81,73,0.2); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Tabs ── */
+  .tab-content { display: none; }
+  .tab-content.active { display: block; animation: fadeIn .2s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  /* ── Sessions ── */
+  .session-list { display: flex; flex-direction: column; gap: 8px; }
+  .session-card {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 16px; align-items: center;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 14px 18px; transition: all .15s;
+  }
+  .session-card:hover { border-color: var(--border-light); background: var(--bg-card-hover); }
+  .session-preview-text { font-size: 13px; color: var(--text-primary); font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 450px; }
+  .session-id { font-size: 11px; color: var(--text-muted); font-family: 'Cascadia Code', monospace; margin-top: 2px; }
+  .session-msgs { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+  .session-date { font-size: 12px; color: var(--text-muted); white-space: nowrap; text-align: right; }
+  .session-size { font-size: 11px; color: var(--text-muted); }
+
+  /* ── QR ── */
+  .qr-container { max-width: 520px; margin: 0 auto; text-align: center; }
+  .qr-steps { display: flex; gap: 12px; margin-bottom: 24px; text-align: left; }
+  .qr-step { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; }
+  .qr-step-num { font-size: 20px; font-weight: 700; color: var(--accent); }
+  .qr-step-text { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+  .qr-box { background: #fff; display: inline-block; padding: 20px; border-radius: var(--radius); box-shadow: 0 4px 24px rgba(0,0,0,0.4); }
   .qr-box pre { font-family: 'Courier New', monospace; font-size: 5.5px; line-height: 6px; color: #000; margin: 0; white-space: pre; }
-  .footer { color: #30363d; font-size: 11px; text-align: center; margin-top: 40px; }
-  .actions { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
-  #qr-status { color: #f9e2af; font-size: 13px; margin-top: 8px; }
+  .qr-timer { margin-top: 16px; font-size: 14px; font-weight: 600; }
+  .qr-timer-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  .qr-timer-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width 1s linear, background .3s; }
+
+  /* ── Logs ── */
+  .log-viewer {
+    background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 11.5px; line-height: 1.7; max-height: 500px; overflow-y: auto;
+    white-space: pre-wrap; color: var(--text-secondary);
+  }
+
+  .empty-state { text-align: center; padding: 48px 24px; color: var(--text-muted); }
+  .empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; background: var(--bg-elevated);
+    border: 1px solid var(--border-light); border-radius: var(--radius-sm);
+    padding: 12px 20px; font-size: 13px; color: var(--text-primary);
+    box-shadow: var(--shadow); transform: translateY(100px); opacity: 0;
+    transition: all .3s ease; z-index: 100;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+  @media (max-width: 800px) {
+    .sidebar { width: 56px; }
+    .sidebar-brand h1, .sidebar-brand p, .nav-item span:not(.nav-icon), .sidebar-footer span { display: none; }
+    .nav-item { justify-content: center; padding: 12px; }
+    .main { margin-left: 56px; padding: 20px; }
+    .hero { flex-direction: column; }
+    .qr-steps { flex-direction: column; }
+  }
 </style>
 </head>
 <body>
+<div class="app">
+  <nav class="sidebar">
+    <div class="sidebar-brand"><h1>🐾 Meni</h1><p>WhatsApp AI Assistant</p></div>
+    <div class="sidebar-nav">
+      <a class="nav-item active" data-tab="status"><span class="nav-icon">📊</span><span>Status</span></a>
+      <a class="nav-item" data-tab="sessions"><span class="nav-icon">💬</span><span>Sessions</span><span class="nav-badge" id="session-count">—</span></a>
+      <a class="nav-item" data-tab="connect"><span class="nav-icon">📱</span><span>WhatsApp Link</span></a>
+      <a class="nav-item" data-tab="logs"><span class="nav-icon">📋</span><span>Logs</span></a>
+    </div>
+    <div class="sidebar-footer">
+      <a href="http://127.0.0.1:18791/" target="_blank">🦞 <span>OpenClaw Control UI</span></a>
+      <a href="http://127.0.0.1:18789/health" target="_blank">💓 <span>Gateway Health</span></a>
+    </div>
+  </nav>
 
-<h1>🐾 Meni</h1>
-<p class="subtitle">Personal AI assistant on WhatsApp — restricted to "אני ומני" group only</p>
+  <main class="main">
+    <!-- STATUS -->
+    <div id="tab-status" class="tab-content active">
+      <div class="hero">
+        <div class="hero-card" id="hero-gw">
+          <div class="hero-label">Gateway</div>
+          <div class="hero-value" id="gw-status"><span class="pulse yellow"></span> Checking...</div>
+          <div class="hero-sub">Port 18789 · Loopback</div>
+        </div>
+        <div class="hero-card" id="hero-wa">
+          <div class="hero-label">WhatsApp</div>
+          <div class="hero-value" id="wa-status"><span class="pulse yellow"></span> Checking...</div>
+          <div class="hero-sub" id="wa-sub">—</div>
+        </div>
+        <div class="hero-card" id="hero-ai">
+          <div class="hero-label">AI Model</div>
+          <div class="hero-value" id="ai-model" style="font-size:15px">—</div>
+          <div class="hero-sub" id="ai-sub">—</div>
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-secondary" id="btn-refresh" onclick="refresh()">🔄 Refresh</button>
+        <button class="btn btn-primary" id="btn-gateway" onclick="startGateway()" style="display:none">▶️ Start Gateway</button>
+        <button class="btn btn-secondary" id="btn-restart" onclick="restartGateway()" style="display:none">🔁 Restart</button>
+        <button class="btn btn-danger" id="btn-stop" onclick="stopGateway()" style="display:none">⏹ Stop</button>
+      </div>
+      <div class="section-title">Configuration</div>
+      <div class="config-grid">
+        <div class="config-item"><div class="config-label">Group</div><div class="config-value" id="cfg-group">—</div></div>
+        <div class="config-item"><div class="config-label">DM Policy</div><div class="config-value" id="cfg-dm">—</div></div>
+        <div class="config-item"><div class="config-label">Group Policy</div><div class="config-value" id="cfg-gpolicy">—</div></div>
+        <div class="config-item"><div class="config-label">Voice In (STT)</div><div class="config-value" id="cfg-stt">—</div></div>
+        <div class="config-item"><div class="config-label">Voice Out (TTS)</div><div class="config-value" id="cfg-tts">—</div></div>
+        <div class="config-item"><div class="config-label">Debounce</div><div class="config-value" id="cfg-debounce">—</div></div>
+      </div>
+    </div>
 
-<div class="actions">
-  <button id="btn-refresh" onclick="refresh()">🔄 Refresh Status</button>
-  <button id="btn-gateway" onclick="startGateway()" style="display:none">▶️ Start Gateway</button>
-  <button id="btn-connect" onclick="connectWhatsApp()" style="display:none">📱 Connect WhatsApp</button>
+    <!-- SESSIONS -->
+    <div id="tab-sessions" class="tab-content">
+      <div class="btn-group"><button class="btn btn-secondary" onclick="loadSessions()">🔄 Refresh</button></div>
+      <div id="sessions-list" class="session-list"><div class="empty-state"><div class="empty-icon">💬</div><p>Loading sessions...</p></div></div>
+    </div>
+
+    <!-- CONNECT -->
+    <div id="tab-connect" class="tab-content">
+      <div class="qr-container">
+        <div class="qr-steps">
+          <div class="qr-step"><div class="qr-step-num">1</div><div class="qr-step-text">Click "Generate QR" below</div></div>
+          <div class="qr-step"><div class="qr-step-num">2</div><div class="qr-step-text">WhatsApp → ⋮ → Linked Devices</div></div>
+          <div class="qr-step"><div class="qr-step-num">3</div><div class="qr-step-text">Tap "Link a Device" & scan</div></div>
+        </div>
+        <div id="wa-connect-info" style="margin-bottom:20px;font-size:13px;color:var(--text-secondary)"></div>
+        <button class="btn btn-primary" id="btn-connect" onclick="connectWhatsApp()" style="font-size:15px;padding:12px 28px">📱 Generate QR Code</button>
+        <div id="qr-section" style="display:none;margin-top:24px">
+          <div class="qr-box"><pre id="qr-code"></pre></div>
+          <div class="qr-timer" id="qr-timer-text">—</div>
+          <div class="qr-timer-bar"><div class="qr-timer-fill" id="qr-timer-fill" style="width:100%"></div></div>
+          <button class="btn btn-secondary" onclick="cancelQr()" style="margin-top:16px">✖ Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOGS -->
+    <div id="tab-logs" class="tab-content">
+      <div class="btn-group"><button class="btn btn-secondary" onclick="loadLogs()">🔄 Refresh</button></div>
+      <div id="log-output" class="log-viewer">Loading logs...</div>
+    </div>
+  </main>
 </div>
 
-<div class="grid">
-  <div class="card">
-    <h2>🌐 Gateway</h2>
-    <div class="row"><span class="label">Status</span><span class="value" id="gw-status">—</span></div>
-    <div class="row"><span class="label">Port</span><span class="value">18789</span></div>
-    <div class="row"><span class="label">Mode</span><span class="value">Local (loopback)</span></div>
-  </div>
-
-  <div class="card">
-    <h2>💬 WhatsApp</h2>
-    <div class="row"><span class="label">Connected</span><span class="value" id="wa-connected">—</span></div>
-    <div class="row"><span class="label">Linked</span><span class="value" id="wa-linked">—</span></div>
-    <div class="row"><span class="label">DM Policy</span><span class="value" id="wa-dm">—</span></div>
-    <div class="row"><span class="label">Group Policy</span><span class="value" id="wa-group">—</span></div>
-  </div>
-
-  <div class="card">
-    <h2>🔒 Security</h2>
-    <div class="row"><span class="label">Allowed Group</span><span class="value" id="sec-group">—</span></div>
-    <div class="row"><span class="label">Group ID</span><span class="value" id="sec-gid" style="font-size:11px">—</span></div>
-    <div class="row"><span class="label">Model</span><span class="value" id="sec-model">—</span></div>
-    <div class="row"><span class="label">Debounce</span><span class="value" id="sec-debounce">—</span></div>
-  </div>
-</div>
-
-<div id="qr-section" class="qr-section" style="display:none">
-  <h2 style="color:#e94560">📱 Scan QR to Connect WhatsApp</h2>
-  <p style="color:#6c7086;margin:8px 0">WhatsApp → ⋮ → Linked Devices → Link a Device</p>
-  <div class="qr-box"><pre id="qr-code"></pre></div>
-  <p id="qr-status">Waiting for QR...</p>
-</div>
-
-<p class="footer">Meni — OpenClaw 2026.3.24 · Gateway ws://127.0.0.1:18789 · Config: ~/.openclaw/openclaw.json</p>
+<div class="toast" id="toast"></div>
 
 <script>
+/* ── Nav ── */
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', e => {
+    e.preventDefault();
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    item.classList.add('active');
+    document.getElementById('tab-' + item.dataset.tab).classList.add('active');
+    if (item.dataset.tab === 'sessions') loadSessions();
+    if (item.dataset.tab === 'logs') loadLogs();
+  });
+});
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+/* ── Status ── */
 async function refresh() {
   document.getElementById('btn-refresh').disabled = true;
   try {
     const resp = await fetch('/api/status');
     const d = await resp.json();
+    const wa = d.whatsapp || {}, cfg = d.config || {};
 
     // Gateway
-    const gwEl = document.getElementById('gw-status');
-    if (d.gateway) {
-      gwEl.innerHTML = '<span class="badge online">● Running</span>';
-      document.getElementById('btn-gateway').style.display = 'none';
-    } else {
-      gwEl.innerHTML = '<span class="badge offline">○ Down</span>';
-      document.getElementById('btn-gateway').style.display = '';
-    }
+    const gwC = document.getElementById('hero-gw');
+    gwC.className = 'hero-card ' + (d.gateway ? 'ok' : 'err');
+    document.getElementById('gw-status').innerHTML = d.gateway
+      ? '<span class="pulse green"></span> Running' : '<span class="pulse red"></span> Offline';
+    document.getElementById('btn-gateway').style.display = d.gateway ? 'none' : '';
+    document.getElementById('btn-restart').style.display = d.gateway ? '' : 'none';
+    document.getElementById('btn-stop').style.display = d.gateway ? '' : 'none';
 
     // WhatsApp
-    const wa = d.whatsapp || {};
-    const cfg = d.config || {};
-    document.getElementById('wa-connected').innerHTML = wa.connected
-      ? '<span class="ok">✅ Connected</span>' : '<span class="err">❌ Disconnected</span>';
-    document.getElementById('wa-linked').innerHTML = wa.linked
-      ? '<span class="ok">✅ Linked</span>' : '<span class="err">❌ Not linked</span>';
-    document.getElementById('wa-dm').innerHTML = cfg.dmPolicy === 'disabled'
-      ? '<span class="ok">disabled (safe)</span>' : '<span class="err">' + (cfg.dmPolicy || '?') + '</span>';
-    document.getElementById('wa-group').innerHTML = cfg.groupPolicy === 'allowlist'
-      ? '<span class="ok">allowlist ✓</span>' : '<span class="warn">' + (cfg.groupPolicy || '?') + '</span>';
+    const waC = document.getElementById('hero-wa');
+    if (wa.connected && wa.linked) {
+      waC.className = 'hero-card ok';
+      document.getElementById('wa-status').innerHTML = '<span class="pulse green"></span> Connected';
+      document.getElementById('wa-sub').textContent = 'Linked & listening · DM ' + (cfg.dmPolicy||'?');
+    } else if (d.gateway) {
+      waC.className = 'hero-card err';
+      document.getElementById('wa-status').innerHTML = '<span class="pulse red"></span> Disconnected';
+      document.getElementById('wa-sub').innerHTML = 'Needs relinking — go to <b>WhatsApp Link</b>';
+    } else {
+      waC.className = 'hero-card warn';
+      document.getElementById('wa-status').innerHTML = '<span class="pulse yellow"></span> Unknown';
+      document.getElementById('wa-sub').textContent = 'Start gateway first';
+    }
 
-    // Security
-    const allowFrom = cfg.groupAllowFrom || [];
-    const hasGroup = allowFrom.includes(d.group_id);
-    document.getElementById('sec-group').innerHTML = hasGroup
-      ? '<span class="ok">' + d.group_name + ' ✓</span>'
-      : '<span class="err">Not configured!</span>';
-    document.getElementById('sec-gid').textContent = d.group_id || '—';
-    document.getElementById('sec-model').textContent = cfg.model || '—';
-    document.getElementById('sec-debounce').textContent = (cfg.debounceMs || 0) + 'ms';
+    // AI
+    const model = cfg.model || 'unknown';
+    document.getElementById('ai-model').textContent = model.replace('github-copilot/', '');
+    document.getElementById('ai-sub').textContent = model.startsWith('github-copilot') ? 'via GitHub Copilot (free)' : model;
 
-    // Show connect button if not linked
-    document.getElementById('btn-connect').style.display = (!wa.linked || !wa.connected) && d.gateway ? '' : 'none';
+    // Config
+    document.getElementById('cfg-group').innerHTML = '<span style="color:var(--green)">אני ומני ✓</span>';
+    document.getElementById('cfg-dm').innerHTML = cfg.dmPolicy === 'disabled'
+      ? '<span style="color:var(--green)">Disabled ✓</span>' : '<span style="color:var(--red)">'+(cfg.dmPolicy||'?')+'</span>';
+    document.getElementById('cfg-gpolicy').innerHTML = cfg.groupPolicy === 'allowlist'
+      ? '<span style="color:var(--green)">Allowlist ✓</span>' : '<span style="color:var(--yellow)">'+(cfg.groupPolicy||'?')+'</span>';
+    document.getElementById('cfg-stt').innerHTML = cfg.audioEnabled
+      ? '<span style="color:var(--green)">Whisper ('+(cfg.audioLanguage||'he')+')</span>' : '<span style="color:var(--text-muted)">Off</span>';
+    document.getElementById('cfg-tts').innerHTML = cfg.ttsAuto && cfg.ttsAuto !== 'off'
+      ? '<span style="color:var(--green)">'+cfg.ttsProvider+' ('+cfg.ttsAuto+')</span>' : '<span style="color:var(--text-muted)">Off</span>';
+    document.getElementById('cfg-debounce').textContent = (cfg.debounceMs||0) + 'ms';
 
+    // Connect info
+    const info = document.getElementById('wa-connect-info');
+    if (wa.connected && wa.linked) info.innerHTML = '<span style="color:var(--green)">✅ WhatsApp is connected. No action needed.</span>';
+    else if (d.gateway) info.innerHTML = '<span style="color:var(--red)">⚠️ WhatsApp disconnected. Generate a QR to relink.</span>';
+    else info.innerHTML = '<span style="color:var(--yellow)">Start the gateway first from the Status tab.</span>';
   } catch (e) {
-    document.getElementById('gw-status').innerHTML = '<span class="badge offline">○ Unreachable</span>';
+    document.getElementById('hero-gw').className = 'hero-card err';
+    document.getElementById('gw-status').innerHTML = '<span class="pulse red"></span> Unreachable';
     document.getElementById('btn-gateway').style.display = '';
   }
   document.getElementById('btn-refresh').disabled = false;
 }
 
 async function startGateway() {
-  const btn = document.getElementById('btn-gateway');
-  btn.textContent = '⏳ Starting...';
-  btn.disabled = true;
+  const b = document.getElementById('btn-gateway'); b.textContent = '⏳ Starting...'; b.disabled = true;
+  toast('Starting gateway...'); try { await fetch('/api/start-gateway',{method:'POST'}); } catch(_){} await refresh();
+  b.textContent = '▶️ Start Gateway'; b.disabled = false; toast('Gateway started ✓');
+}
+async function restartGateway() {
+  const b = document.getElementById('btn-restart'); b.textContent = '⏳...'; b.disabled = true;
+  toast('Restarting gateway...'); try { await fetch('/api/restart-gateway',{method:'POST'}); } catch(_){} await refresh();
+  b.textContent = '🔁 Restart'; b.disabled = false; toast('Gateway restarted ✓');
+}
+async function stopGateway() {
+  const b = document.getElementById('btn-stop'); b.disabled = true; toast('Stopping gateway...');
+  try { await fetch('/api/stop-gateway',{method:'POST'}); } catch(_){} await new Promise(r=>setTimeout(r,2000));
+  await refresh(); b.disabled = false; toast('Gateway stopped');
+}
+
+/* ── Sessions ── */
+async function loadSessions() {
   try {
-    await fetch('/api/start-gateway', { method: 'POST' });
-    await new Promise(r => setTimeout(r, 3000));
-    refresh();
-  } catch (_) {}
-  btn.textContent = '▶️ Start Gateway';
-  btn.disabled = false;
+    const resp = await fetch('/api/sessions'); const d = await resp.json();
+    const list = document.getElementById('sessions-list'), sessions = d.sessions || [];
+    document.getElementById('session-count').textContent = sessions.length;
+    if (!sessions.length) { list.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>No sessions found</p></div>'; return; }
+    list.innerHTML = sessions.map(s => {
+      const date = s.lastTs ? new Date(s.lastTs).toLocaleString('he-IL',{dateStyle:'medium',timeStyle:'short'}) : '—';
+      return `<div class="session-card"><div><div class="session-preview-text">${esc(s.preview)}</div><div class="session-id">${s.id.substring(0,8)}…</div></div><div class="session-msgs">👤 ${s.userMsgs} → 🤖 ${s.assistantMsgs}</div><div><div class="session-date">${date}</div><div class="session-size">${s.sizeKb} KB</div></div></div>`;
+    }).join('');
+  } catch(e) { document.getElementById('sessions-list').innerHTML = '<div class="empty-state"><div class="empty-icon">❌</div><p>Error loading sessions</p></div>'; }
 }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-let qrPolling = null;
-let qrCountdown = null;
-let qrSecondsLeft = 15;
-
+/* ── QR ── */
+let qrPolling = null, qrCountdown = null, qrSecondsLeft = 15;
 async function connectWhatsApp() {
-  const section = document.getElementById('qr-section');
-  section.style.display = '';
-  document.getElementById('qr-status').textContent = '⏳ Starting WhatsApp login...';
+  document.getElementById('qr-section').style.display = '';
+  document.getElementById('qr-timer-text').textContent = '⏳ Generating QR code...';
   document.getElementById('btn-connect').disabled = true;
-
-  await fetch('/api/connect-whatsapp', { method: 'POST' });
-
-  // Wait a moment for QR to generate, then start polling
-  setTimeout(startQrPolling, 2000);
+  await fetch('/api/connect-whatsapp',{method:'POST'}); setTimeout(startQrPolling, 2000);
 }
-
 function startQrPolling() {
-  if (qrPolling) clearInterval(qrPolling);
-  if (qrCountdown) clearInterval(qrCountdown);
-  qrSecondsLeft = 15;
-
-  // Poll for QR every 2 seconds
+  stopQrPolling(); qrSecondsLeft = 15;
   qrPolling = setInterval(async () => {
     try {
-      const resp = await fetch('/api/qr');
-      const d = await resp.json();
-      if (d.connected) {
-        stopQrPolling();
-        document.getElementById('qr-section').style.display = 'none';
-        document.getElementById('btn-connect').disabled = false;
-        refresh();
-        return;
-      }
-      if (d.qr) {
-        document.getElementById('qr-code').textContent = d.qr;
-        // If QR is fresh (age < 3s), reset countdown
-        if (d.age < 3) {
-          qrSecondsLeft = 15;
-        }
-        updateQrStatus();
-      } else {
-        document.getElementById('qr-status').textContent = '⏳ Generating QR code...';
-      }
-    } catch (_) {}
+      const r = await fetch('/api/qr'), d = await r.json();
+      if (d.connected) { stopQrPolling(); document.getElementById('qr-section').style.display='none';
+        document.getElementById('btn-connect').disabled=false; toast('✅ Connected! Restarting gateway...');
+        await fetch('/api/restart-gateway',{method:'POST'}); refresh(); return; }
+      if (d.qr) { document.getElementById('qr-code').textContent = d.qr; if (d.age < 3) qrSecondsLeft = 15; updateQrTimer(); }
+    } catch(_){}
   }, 2000);
-
-  // Countdown timer - updates every second
   qrCountdown = setInterval(() => {
-    qrSecondsLeft--;
-    if (qrSecondsLeft <= 0) {
-      // QR expired, restart login to get a fresh one
-      document.getElementById('qr-status').innerHTML = '🔄 <span style="color:#f9e2af">QR expired — refreshing...</span>';
-      restartQrCapture();
-      return;
-    }
-    updateQrStatus();
+    qrSecondsLeft--; if (qrSecondsLeft <= 0) { document.getElementById('qr-timer-text').textContent = '🔄 Refreshing...'; restartQrCapture(); return; }
+    updateQrTimer();
   }, 1000);
 }
+function updateQrTimer() {
+  const pct = (qrSecondsLeft/15)*100, color = qrSecondsLeft<=5?'var(--red)':qrSecondsLeft<=10?'var(--yellow)':'var(--green)';
+  document.getElementById('qr-timer-text').innerHTML = `📱 Scan now! <span style="color:${color};font-weight:700">${qrSecondsLeft}s</span>`;
+  const f = document.getElementById('qr-timer-fill'); f.style.width = pct+'%'; f.style.background = color;
+}
+async function restartQrCapture() { await fetch('/api/connect-whatsapp',{method:'POST'}); qrSecondsLeft = 15; }
+function stopQrPolling() { if(qrPolling){clearInterval(qrPolling);qrPolling=null;} if(qrCountdown){clearInterval(qrCountdown);qrCountdown=null;} }
+function cancelQr() { stopQrPolling(); document.getElementById('qr-section').style.display='none'; document.getElementById('btn-connect').disabled=false; }
 
-function updateQrStatus() {
-  const el = document.getElementById('qr-status');
-  const color = qrSecondsLeft <= 5 ? '#f38ba8' : qrSecondsLeft <= 10 ? '#f9e2af' : '#a6e3a1';
-  el.innerHTML = `📱 Scan now! Refreshes in <span style="color:${color};font-weight:bold">${qrSecondsLeft}s</span>`;
+/* ── Logs ── */
+async function loadLogs() {
+  try { const r = await fetch('/api/logs'), d = await r.json(), el = document.getElementById('log-output');
+    el.textContent = (d.lines||[]).join('\n')||'No logs'; el.scrollTop = el.scrollHeight;
+  } catch(e) { document.getElementById('log-output').textContent = 'Error loading logs'; }
 }
 
-async function restartQrCapture() {
-  // Restart the login process for a fresh QR
-  await fetch('/api/connect-whatsapp', { method: 'POST' });
-  qrSecondsLeft = 15;
-  // Keep polling — the new QR will appear automatically
-}
-
-function stopQrPolling() {
-  if (qrPolling) { clearInterval(qrPolling); qrPolling = null; }
-  if (qrCountdown) { clearInterval(qrCountdown); qrCountdown = null; }
-}
-
-refresh();
-setInterval(refresh, 30000);
+refresh(); setInterval(refresh, 20000);
 </script>
 </body>
 </html>
