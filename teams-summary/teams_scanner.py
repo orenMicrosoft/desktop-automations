@@ -239,18 +239,19 @@ def _extract_message_content(window_raw: bytes, window_utf8: str) -> list[str]:
 
 # ── Thread / message ID extraction for deep links ────────────────────────────
 
+_THREAD_SUFFIXES = r"(?:thread\.tacv2|unq\.gbl\.spaces|thread\.skype|thread\.v2)"
+
+
 def _extract_thread_id(window_utf8: str) -> str | None:
     """Extract the conversation thread ID (19:xxx@thread.tacv2 etc.)."""
-    # conversationLink field has the most reliable thread+message pair
     m = re.search(
-        r'conversation/(19:[a-zA-Z0-9_-]+@(?:thread\.tacv2|unq\.gbl\.spaces|thread\.skype))',
+        r'conversation/(19:[a-zA-Z0-9_-]+@' + _THREAD_SUFFIXES + r')',
         window_utf8,
     )
     if m:
         return m.group(1)
-    # Fallback: standalone thread IDs
     m = re.search(
-        r'(19:[a-zA-Z0-9_-]{20,}@(?:thread\.tacv2|unq\.gbl\.spaces|thread\.skype))',
+        r'(19:[a-zA-Z0-9_-]{20,}@' + _THREAD_SUFFIXES + r')',
         window_utf8,
     )
     return m.group(1) if m else None
@@ -275,6 +276,27 @@ def _build_teams_link(thread_id: str | None, message_id: str | None) -> str | No
     if message_id:
         return f"https://teams.microsoft.com/l/message/{encoded_thread}/{message_id}"
     return f"https://teams.microsoft.com/l/message/{encoded_thread}/"
+
+
+def _detect_chat_type(window_utf8: str) -> str:
+    """Detect whether a message is a direct message, group chat, or channel post.
+    Returns: "dm", "group", or "channel".
+    """
+    # isGroup=false + chatType=chat → 1:1 DM
+    has_chat = bool(re.search(r'chatType[^\w]{0,5}chat\b', window_utf8))
+    is_not_group = bool(re.search(r'isGroup[^\w]{0,5}false', window_utf8))
+    if has_chat and is_not_group:
+        return "dm"
+    # chatType=chat without isGroup info → could be group chat
+    if has_chat:
+        return "group"
+    # thread.skype or postType → channel
+    if re.search(r'@thread\.skype|postType', window_utf8):
+        return "channel"
+    # thread.v2 or unq.gbl.spaces without postType → likely DM/group
+    if re.search(r'@(?:thread\.v2|unq\.gbl\.spaces)', window_utf8):
+        return "dm"
+    return "channel"
 
 
 # ── Relevance scoring ────────────────────────────────────────────────────────
@@ -333,6 +355,13 @@ def _score_relevance(msg: dict) -> tuple[int, str]:
         score += 5
     if msg.get("subject"):
         score += 3
+
+    # DM boost: direct messages are inherently more personal/important
+    chat_type = msg.get("chat_type", "channel")
+    if chat_type == "dm":
+        score += 25
+    elif chat_type == "group":
+        score += 10
 
     # Time decay: newer messages get a small boost (max +8)
     try:
@@ -438,6 +467,7 @@ def _do_scan(db_dir: Path, days_back: int, result: dict) -> dict:
             thread_id = _extract_thread_id(window_utf8)
             message_id = _extract_message_id(window_utf8)
             teams_link = _build_teams_link(thread_id, message_id)
+            chat_type = _detect_chat_type(window_utf8)
 
             content_key = contents[0][:80] if contents else ""
             unique_key = f"{ts}|{content_key}"
@@ -453,6 +483,7 @@ def _do_scan(db_dir: Path, days_back: int, result: dict) -> dict:
                 "content": contents[:3],
                 "subject": subjects[0] if subjects else None,
                 "teams_link": teams_link,
+                "chat_type": chat_type,
             }
 
             # Score relevance
@@ -476,6 +507,7 @@ def _do_scan(db_dir: Path, days_back: int, result: dict) -> dict:
 if __name__ == "__main__":
     import json as _json
     import sys as _sys
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     days = int(_sys.argv[1]) if len(_sys.argv) > 1 else 3
     print(f"Scanning Teams cache (last {days} days)...")
@@ -489,11 +521,13 @@ if __name__ == "__main__":
         print(f"Messages: {len(data['messages'])}")
         labels = {"critical": "🔴", "action": "🟠", "review": "🟡",
                   "mention": "🔵", "question": "❓", "info": "⚪"}
+        types = {"dm": "💬", "group": "👥", "channel": "📢"}
         for m in data["messages"][:15]:
             icon = labels.get(m.get("relevance_label", "info"), "⚪")
+            ct = types.get(m.get("chat_type", "channel"), "📢")
             score = m.get("relevance_score", 0)
             link = " 🔗" if m.get("teams_link") else ""
-            print(f"  {icon} [{score:3d}] [{m['time'][:16]}] "
+            print(f"  {icon} {ct} [{score:3d}] [{m['time'][:16]}] "
                   f"{', '.join(m['senders'][:2]) or '?'}: "
                   f"{(m['content'][0][:80] if m['content'] else m.get('subject', ''))}"
                   f"{link}")

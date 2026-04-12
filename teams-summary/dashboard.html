@@ -53,6 +53,12 @@ a:hover{text-decoration:underline}
 .badge-question{background:rgba(167,139,250,.12);color:var(--purple);border:1px solid rgba(167,139,250,.3)}
 .badge-info{background:rgba(122,130,158,.1);color:var(--muted);border:1px solid rgba(122,130,158,.2)}
 
+/* Chat type badge */
+.chat-type-badge{display:inline-flex;align-items:center;gap:4px;font-size:.68rem;font-weight:500;padding:2px 8px;border-radius:10px;white-space:nowrap}
+.ct-dm{background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.3)}
+.ct-group{background:rgba(167,139,250,.1);color:var(--purple);border:1px solid rgba(167,139,250,.2)}
+.ct-channel{background:rgba(122,130,158,.08);color:var(--muted);border:1px solid rgba(122,130,158,.15)}
+
 /* Open in Teams button */
 .teams-btn{display:inline-flex;align-items:center;gap:5px;background:var(--accent);color:var(--blue);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:.73rem;cursor:pointer;white-space:nowrap;transition:all .2s;text-decoration:none;margin-left:auto;flex-shrink:0}
 .teams-btn:hover{background:rgba(96,165,250,.15);border-color:var(--blue);text-decoration:none;color:#fff}
@@ -261,9 +267,13 @@ function render() {
   const subjects = DATA.subjects || [];
   const links = DATA.links || [];
 
-  // Count by relevance
+  // Count by relevance and chat type
   const counts = {};
-  msgs.forEach(m => { const l = m.relevance_label || 'info'; counts[l] = (counts[l]||0) + 1; });
+  const typeCounts = {dm: 0, group: 0, channel: 0};
+  msgs.forEach(m => {
+    const l = m.relevance_label || 'info'; counts[l] = (counts[l]||0) + 1;
+    const ct = m.chat_type || 'channel'; typeCounts[ct] = (typeCounts[ct]||0) + 1;
+  });
   const actionable = (counts.critical||0) + (counts.action||0) + (counts.review||0) + (counts.mention||0);
 
   document.getElementById('legend').style.display = msgs.length ? 'flex' : 'none';
@@ -273,6 +283,11 @@ function render() {
       <div class="label">Total Messages</div>
       <div class="value">${msgs.length}</div>
       <div class="sub">in cache</div>
+    </div>
+    <div class="kpi" onclick="filterByType('dm')" title="Filter direct messages" style="border-color:${typeCounts.dm ? 'var(--green)' : 'var(--border)'}">
+      <div class="label">💬 Direct Messages</div>
+      <div class="value" style="color:${typeCounts.dm ? 'var(--green)' : 'var(--text)'}">${typeCounts.dm}</div>
+      <div class="sub">${typeCounts.group} group · ${typeCounts.channel} channel</div>
     </div>
     <div class="kpi" onclick="filterByLabel('critical,action')" title="Filter critical + action" style="border-color:${actionable ? 'var(--orange)' : 'var(--border)'}">
       <div class="label">🔥 Needs Attention</div>
@@ -323,6 +338,11 @@ function filterByLabel(labels) {
   renderMessages();
 }
 
+function filterByType(type) {
+  document.getElementById('searchBox').value = '@' + type;
+  renderMessages();
+}
+
 function renderMessages() {
   const container = document.getElementById('msgList');
   const countEl = document.getElementById('msgCount');
@@ -330,11 +350,15 @@ function renderMessages() {
 
   const rawFilter = (document.getElementById('searchBox').value || '').trim();
   let labelFilter = null;
+  let typeFilter = null;
   let textFilter = '';
 
   // Special filter: ":critical,action" filters by relevance label
   if (rawFilter.startsWith(':')) {
     labelFilter = rawFilter.slice(1).split(',').map(s => s.trim().toLowerCase());
+  // Chat type filter: "@dm", "@group", "@channel"
+  } else if (rawFilter.startsWith('@')) {
+    typeFilter = rawFilter.slice(1).toLowerCase();
   } else {
     textFilter = rawFilter.toLowerCase();
   }
@@ -342,15 +366,17 @@ function renderMessages() {
   const msgs = DATA.messages.filter(m => {
     if (labelFilter) {
       const ml = m.relevance_label || 'info';
-      // "critical,action" should also match review and mention for the "Needs Attention" KPI
       const expanded = labelFilter.includes('critical') && labelFilter.includes('action')
         ? [...labelFilter, 'review', 'mention']
         : labelFilter;
       return expanded.includes(ml);
     }
+    if (typeFilter) {
+      return (m.chat_type || 'channel') === typeFilter;
+    }
     if (!textFilter) return true;
     const haystack = [
-      m.time, m.subject || '', m.relevance_label || '',
+      m.time, m.subject || '', m.relevance_label || '', m.chat_type || '',
       ...(m.senders || []),
       ...(m.content || [])
     ].join(' ').toLowerCase();
@@ -405,7 +431,11 @@ function renderMessages() {
 
       html += `<div class="msg">`;
       html += `<div class="meta">`;
+      const chatIcons = {dm: '💬', group: '👥', channel: '📢'};
+      const chatLabels = {dm: 'DM', group: 'Group', channel: 'Channel'};
+      const ct = m.chat_type || 'channel';
       html += `<span class="relevance-badge ${badge.css}">${badge.icon} ${badge.label}</span>`;
+      html += `<span class="chat-type-badge ct-${ct}" title="${chatLabels[ct]}">${chatIcons[ct]} ${chatLabels[ct]}</span>`;
       html += `<span class="time">${day} ${time}</span>`;
       html += `<span class="sender">${senders}</span>`;
       html += teamsBtn;
