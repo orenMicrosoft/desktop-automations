@@ -64,5 +64,16 @@
     "folder": "openclaw-meni",
     "cmd": ["dashboard_server.py", "--no-browser"],
     "health_path": "/api/status"
+  },
+  {
+    "id": "pr-reviewer",
+    "name": "PR Reviewer",
+    "description": "AI-powered PR review — generate comments, edit inline, post directly to ADO",
+    "schedule": "On demand",
+    "dashboard": "http://localhost:8097/dashboard.html",
+    "port": 8097,
+    "folder": "pr-reviewer",
+    "cmd": ["pr_reviewer_server.py", "--no-browser"],
+    "health_path": "/api/health"
   }
 ]

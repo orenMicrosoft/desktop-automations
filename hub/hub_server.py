@@ -74,6 +74,12 @@ SERVER_COMMANDS = {
         "cmd": [sys.executable, "dashboard_server.py", "--no-browser"],
         "health_path": "/api/status",
     },
+    "pr-reviewer": {
+        "port": 8097,
+        "cwd": r"C:\Users\orenhorowitz\desktop-automations\pr-reviewer",
+        "cmd": [sys.executable, "pr_reviewer_server.py", "--no-browser"],
+        "health_path": "/api/health",
+    },
 }
 
 child_processes = {}

@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PR Reviewer — My Automations</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   Catppuccin Mocha tokens (same as other dashboards)
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  --bg: #1e1e2e; --base: #1e1e2e;
+  --surface: #313244; --surface1: #45475a; --overlay: #45475a;
+  --text: #cdd6f4; --muted: #6c7086; --subtext: #a6adc8;
+  --blue: #89b4fa; --green: #a6e3a1; --red: #f38ba8;
+  --yellow: #f9e2af; --mauve: #cba6f7; --teal: #94e2d5;
+  --peach: #fab387; --pink: #f5c2e7; --sky: #89dceb;
+  --lavender: #b4befe; --crust: #11111b; --mantle: #181825;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; }
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg); color: var(--text);
+  min-height: 100vh; display: flex; flex-direction: column;
+}
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+input, select, textarea { font-family: inherit; font-size: inherit; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--mantle); }
+::-webkit-scrollbar-thumb { background: var(--surface1); border-radius: 4px; }
+
+/* ═══════════ Layout ═══════════ */
+.header {
+  background: var(--mantle); border-bottom: 1px solid var(--surface);
+  padding: 12px 24px; display: flex; align-items: center; gap: 16px;
+  position: sticky; top: 0; z-index: 100;
+}
+.header-title { font-size: 1.4rem; font-weight: 600; }
+.header-title span { color: var(--mauve); }
+.header-actions { display: flex; gap: 8px; margin-left: auto; align-items: center; }
+
+.main { padding: 20px 24px; flex: 1; display: flex; flex-direction: column; gap: 16px; }
+
+/* ═══════════ PR Input ═══════════ */
+.pr-input-row {
+  display: flex; gap: 10px; align-items: center;
+}
+.pr-url-input {
+  flex: 1; background: var(--surface); border: 1px solid var(--surface1);
+  border-radius: 6px; padding: 8px 14px; color: var(--text); outline: none;
+  font-size: .95rem;
+}
+.pr-url-input:focus { border-color: var(--blue); }
+.pr-url-input::placeholder { color: var(--muted); }
+
+.btn {
+  padding: 8px 16px; border-radius: 6px; font-size: .9rem; font-weight: 500;
+  transition: background .15s, opacity .15s;
+}
+.btn-primary { background: var(--blue); color: var(--crust); }
+.btn-primary:hover { opacity: .85; }
+.btn-green { background: var(--green); color: var(--crust); }
+.btn-green:hover { opacity: .85; }
+.btn-mauve { background: var(--mauve); color: var(--crust); }
+.btn-mauve:hover { opacity: .85; }
+.btn-red { background: var(--red); color: var(--crust); }
+.btn-red:hover { opacity: .85; }
+.btn-outline {
+  border: 1px solid var(--surface1); background: var(--surface);
+  color: var(--text);
+}
+.btn-outline:hover { border-color: var(--blue); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ═══════════ PR Info Banner ═══════════ */
+.pr-banner {
+  background: var(--surface); border-radius: 8px; padding: 14px 18px;
+  display: none; gap: 12px; flex-direction: column;
+  border-left: 4px solid var(--blue);
+}
+.pr-banner.visible { display: flex; }
+.pr-banner-title { font-size: 1.1rem; font-weight: 600; }
+.pr-banner-meta { color: var(--subtext); font-size: .85rem; display: flex; gap: 16px; flex-wrap: wrap; }
+.pr-banner-meta span { display: flex; align-items: center; gap: 4px; }
+
+/* ═══════════ Actions Bar ═══════════ */
+.actions-bar {
+  display: none; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+.actions-bar.visible { display: flex; }
+.ai-badge {
+  font-size: .75rem; padding: 3px 8px; border-radius: 10px;
+  background: var(--surface1); color: var(--subtext);
+}
+.ai-badge.configured { background: var(--green); color: var(--crust); }
+.comment-count { color: var(--muted); font-size: .85rem; margin-left: auto; }
+
+/* ═══════════ Comments Table ═══════════ */
+.comments-section { display: none; flex-direction: column; gap: 8px; }
+.comments-section.visible { display: flex; }
+
+.comments-table {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  background: var(--surface); border-radius: 8px; overflow: hidden;
+}
+.comments-table th {
+  background: var(--mantle); padding: 10px 14px; text-align: left;
+  font-size: .8rem; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--surface1);
+  position: sticky; top: 48px; z-index: 10;
+}
+.comments-table td {
+  padding: 10px 14px; border-bottom: 1px solid var(--surface1);
+  vertical-align: top; font-size: .9rem;
+}
+.comments-table tr:last-child td { border-bottom: none; }
+.comments-table tr:hover td { background: rgba(137, 180, 250, .05); }
+
+.sev-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: .75rem; font-weight: 600; text-transform: uppercase;
+}
+.sev-critical { background: var(--red); color: var(--crust); }
+.sev-medium { background: var(--yellow); color: var(--crust); }
+.sev-error { background: var(--red); color: var(--crust); }
+
+.file-path { color: var(--blue); font-family: 'Cascadia Code', Consolas, monospace; font-size: .8rem; }
+.line-num { color: var(--peach); font-family: monospace; }
+
+.comment-cell { min-width: 240px; }
+.comment-text {
+  background: transparent; border: 1px solid transparent; border-radius: 4px;
+  color: var(--text); padding: 4px 6px; width: 100%; resize: vertical;
+  min-height: 36px; font-family: inherit; font-size: .88rem;
+  transition: border-color .15s;
+}
+.comment-text:hover { border-color: var(--surface1); }
+.comment-text:focus { border-color: var(--blue); outline: none; background: var(--mantle); }
+
+.issue-cell, .suggestion-cell { min-width: 160px; font-size: .85rem; color: var(--subtext); }
+
+.row-actions { display: flex; gap: 4px; }
+.row-btn {
+  padding: 4px 10px; border-radius: 4px; font-size: .78rem; font-weight: 500;
+}
+.row-btn.post { background: var(--green); color: var(--crust); }
+.row-btn.post:hover { opacity: .85; }
+.row-btn.delete { background: var(--red); color: var(--crust); }
+.row-btn.delete:hover { opacity: .85; }
+.row-btn.posted { background: var(--surface1); color: var(--muted); cursor: default; }
+
+/* ═══════════ Toast ═══════════ */
+.toast {
+  position: fixed; bottom: 20px; right: 20px; padding: 12px 20px;
+  border-radius: 8px; font-size: .9rem; z-index: 1000;
+  transform: translateY(80px); opacity: 0; transition: all .3s ease;
+  pointer-events: none;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.success { background: var(--green); color: var(--crust); }
+.toast.error { background: var(--red); color: var(--crust); }
+.toast.info { background: var(--blue); color: var(--crust); }
+
+/* ═══════════ Loading ═══════════ */
+.spinner {
+  display: inline-block; width: 16px; height: 16px;
+  border: 2px solid var(--surface1); border-top-color: var(--blue);
+  border-radius: 50%; animation: spin .6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.5);
+  display: none; align-items: center; justify-content: center; z-index: 200;
+}
+.loading-overlay.visible { display: flex; }
+.loading-box {
+  background: var(--surface); border-radius: 12px; padding: 28px 36px;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.loading-box .spinner { width: 28px; height: 28px; border-width: 3px; }
+
+/* ═══════════ Empty state ═══════════ */
+.empty-state {
+  text-align: center; padding: 48px 24px; color: var(--muted);
+}
+.empty-state h3 { font-size: 1.1rem; margin-bottom: 8px; color: var(--subtext); }
+
+/* ═══════════ Add comment form ═══════════ */
+.add-form {
+  background: var(--surface); border-radius: 8px; padding: 16px;
+  display: none; gap: 10px; flex-direction: column;
+  border: 1px dashed var(--surface1);
+}
+.add-form.visible { display: flex; }
+.add-form-row { display: flex; gap: 10px; }
+.add-form input, .add-form textarea, .add-form select {
+  background: var(--mantle); border: 1px solid var(--surface1);
+  border-radius: 4px; padding: 6px 10px; color: var(--text); outline: none;
+}
+.add-form input:focus, .add-form textarea:focus { border-color: var(--blue); }
+.add-form textarea { resize: vertical; min-height: 48px; }
+.add-form label { font-size: .8rem; color: var(--muted); margin-bottom: 2px; }
+.add-form .field { display: flex; flex-direction: column; flex: 1; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-title">📝 <span>PR Reviewer</span></div>
+  <div class="header-actions">
+    <span id="aiStatus" class="ai-badge">AI: checking…</span>
+    <a href="http://localhost:8091" class="btn btn-outline" style="font-size:.8rem;">← Hub</a>
+  </div>
+</div>
+
+<div class="main">
+  <!-- PR URL Input -->
+  <div class="pr-input-row">
+    <input id="prUrl" type="text" class="pr-url-input"
+           placeholder="Paste ADO PR URL (e.g. https://dev.azure.com/org/project/_git/repo/pullrequest/12345)">
+    <button id="loadBtn" class="btn btn-primary" onclick="loadPR()">Load PR</button>
+  </div>
+
+  <!-- PR Info Banner -->
+  <div id="prBanner" class="pr-banner">
+    <div class="pr-banner-title" id="prTitle"></div>
+    <div class="pr-banner-meta">
+      <span>👤 <span id="prAuthor"></span></span>
+      <span>🔀 <span id="prBranch"></span></span>
+      <span>📁 <span id="prFileCount"></span> files</span>
+      <span><a id="prLink" href="#" target="_blank">Open in ADO ↗</a></span>
+    </div>
+  </div>
+
+  <!-- Actions Bar -->
+  <div id="actionsBar" class="actions-bar">
+    <button class="btn btn-mauve" onclick="generateReview()" id="generateBtn">🤖 Generate AI Review</button>
+    <button class="btn btn-outline" onclick="toggleAddForm()">+ Add Comment</button>
+    <button class="btn btn-green" onclick="postAll()" id="postAllBtn">🚀 Post All to PR</button>
+    <span class="comment-count" id="commentCount"></span>
+  </div>
+
+  <!-- Add comment form (hidden by default) -->
+  <div id="addForm" class="add-form">
+    <div class="add-form-row">
+      <div class="field">
+        <label>Severity</label>
+        <select id="addSeverity"><option value="medium">Medium</option><option value="critical">Critical</option></select>
+      </div>
+      <div class="field">
+        <label>File path</label>
+        <input id="addFile" type="text" placeholder="/path/to/file.tsx">
+      </div>
+      <div class="field" style="max-width:80px;">
+        <label>Line</label>
+        <input id="addLine" type="number" placeholder="0">
+      </div>
+    </div>
+    <div class="field">
+      <label>Comment (friendly question)</label>
+      <textarea id="addComment" rows="2" placeholder="Hey, could we…?"></textarea>
+    </div>
+    <div class="add-form-row">
+      <div class="field">
+        <label>Issue</label>
+        <textarea id="addIssue" rows="1" placeholder="What's the problem"></textarea>
+      </div>
+      <div class="field">
+        <label>Suggestion</label>
+        <textarea id="addSuggestion" rows="1" placeholder="How to fix it"></textarea>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-primary" onclick="submitAddComment()">Add</button>
+      <button class="btn btn-outline" onclick="toggleAddForm()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Comments Table -->
+  <div id="commentsSection" class="comments-section">
+    <table class="comments-table">
+      <thead>
+        <tr>
+          <th style="width:60px">#</th>
+          <th style="width:80px">Sev</th>
+          <th style="width:200px">File</th>
+          <th style="width:50px">Line</th>
+          <th class="comment-cell">Comment</th>
+          <th style="width:180px">Issue</th>
+          <th style="width:180px">Suggestion</th>
+          <th style="width:120px">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="commentsBody"></tbody>
+    </table>
+  </div>
+
+  <div id="emptyState" class="empty-state">
+    <h3>No PR loaded</h3>
+    <p>Paste a PR URL above and click "Load PR" to get started.</p>
+  </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="loading-overlay">
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <div id="loadingText">Loading…</div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<script>
+const API = '';  // same origin
+
+// ── Toast ──
+function toast(msg, type = 'info') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast ${type} show`;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── Loading ──
+function showLoading(text) {
+  document.getElementById('loadingText').textContent = text;
+  document.getElementById('loadingOverlay').classList.add('visible');
+}
+function hideLoading() {
+  document.getElementById('loadingOverlay').classList.remove('visible');
+}
+
+// ── API helpers ──
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(API + path, opts);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// ── State ──
+let reviewData = { pr_info: null, comments: [] };
+
+// ── Load PR ──
+async function loadPR() {
+  const url = document.getElementById('prUrl').value.trim();
+  if (!url) return toast('Paste a PR URL first', 'error');
+
+  showLoading('Fetching PR diff…');
+  try {
+    const result = await api('POST', '/api/load-pr', { url });
+    reviewData.pr_info = result.pr_info;
+    reviewData.comments = [];
+
+    // Show banner
+    const b = document.getElementById('prBanner');
+    b.classList.add('visible');
+    document.getElementById('prTitle').textContent = result.pr_info.title;
+    document.getElementById('prAuthor').textContent = result.pr_info.author;
+    document.getElementById('prBranch').textContent =
+      `${result.pr_info.source_branch} → ${result.pr_info.target_branch}`;
+    document.getElementById('prFileCount').textContent = result.files_count;
+    document.getElementById('prLink').href = result.pr_info.url;
+
+    document.getElementById('actionsBar').classList.add('visible');
+    document.getElementById('emptyState').style.display = 'none';
+
+    renderComments([]);
+    toast(`Loaded: ${result.files_count} files, ${result.diffs_count} diffs`, 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+// ── Generate AI Review ──
+async function generateReview() {
+  showLoading('Generating AI review… this may take 30-60s');
+  try {
+    const result = await api('POST', '/api/generate-review');
+    reviewData.comments = result.comments;
+    renderComments(result.comments);
+    toast(`Generated ${result.comments.length} comments`, 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+// ── Render Comments Table ──
+function renderComments(comments) {
+  const tbody = document.getElementById('commentsBody');
+  const section = document.getElementById('commentsSection');
+
+  if (!comments || comments.length === 0) {
+    section.classList.remove('visible');
+    document.getElementById('commentCount').textContent = '';
+    return;
+  }
+
+  section.classList.add('visible');
+  const unposted = comments.filter(c => !c.posted).length;
+  document.getElementById('commentCount').textContent =
+    `${comments.length} comments (${unposted} pending)`;
+
+  tbody.innerHTML = comments.map((c, i) => `
+    <tr data-id="${c.id}" class="${c.posted ? 'posted-row' : ''}">
+      <td>${i + 1}</td>
+      <td><span class="sev-badge sev-${c.severity}">${c.severity}</span></td>
+      <td><span class="file-path" title="${esc(c.file)}">${shortPath(c.file)}</span></td>
+      <td><span class="line-num">${c.line || '—'}</span></td>
+      <td class="comment-cell">
+        <textarea class="comment-text" rows="2"
+          onchange="updateComment(${c.id}, 'comment', this.value)"
+          ${c.posted ? 'disabled' : ''}>${esc(c.comment)}</textarea>
+      </td>
+      <td class="issue-cell">${esc(c.issue)}</td>
+      <td class="suggestion-cell">${esc(c.suggestion)}</td>
+      <td>
+        <div class="row-actions">
+          ${c.posted
+            ? '<button class="row-btn posted" disabled>✓ Posted</button>'
+            : `<button class="row-btn post" onclick="postOne(${c.id})">Post</button>
+               <button class="row-btn delete" onclick="deleteComment(${c.id})">✕</button>`
+          }
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function shortPath(p) {
+  if (!p) return '—';
+  const parts = p.split('/');
+  return parts.length > 3 ? '…/' + parts.slice(-3).join('/') : p;
+}
+
+// ── Update comment ──
+async function updateComment(id, field, value) {
+  try {
+    const result = await api('PUT', `/api/comment/${id}`, { [field]: value });
+    // Update local state
+    const c = reviewData.comments.find(c => c.id === id);
+    if (c) c[field] = value;
+    toast('Comment updated', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// ── Delete comment ──
+async function deleteComment(id) {
+  try {
+    await api('DELETE', `/api/comment/${id}`);
+    reviewData.comments = reviewData.comments.filter(c => c.id !== id);
+    renderComments(reviewData.comments);
+    toast('Comment removed', 'info');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// ── Post one comment ──
+async function postOne(id) {
+  try {
+    await api('POST', '/api/post-comment', { id });
+    const c = reviewData.comments.find(c => c.id === id);
+    if (c) c.posted = true;
+    renderComments(reviewData.comments);
+    toast('Comment posted to PR', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// ── Post all ──
+async function postAll() {
+  const unposted = reviewData.comments.filter(c => !c.posted).length;
+  if (!unposted) return toast('All comments already posted', 'info');
+
+  showLoading(`Posting ${unposted} comments…`);
+  try {
+    const result = await api('POST', '/api/post-all-comments');
+    // Refresh state
+    const full = await api('GET', '/api/review');
+    reviewData.comments = full.comments || [];
+    renderComments(reviewData.comments);
+    toast(`Posted ${result.posted} comments`, 'success');
+    if (result.errors?.length) toast(`${result.errors.length} failed`, 'error');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+// ── Add comment form ──
+function toggleAddForm() {
+  document.getElementById('addForm').classList.toggle('visible');
+}
+
+async function submitAddComment() {
+  const data = {
+    severity: document.getElementById('addSeverity').value,
+    file: document.getElementById('addFile').value.trim(),
+    line: parseInt(document.getElementById('addLine').value) || 0,
+    comment: document.getElementById('addComment').value.trim(),
+    issue: document.getElementById('addIssue').value.trim(),
+    suggestion: document.getElementById('addSuggestion').value.trim(),
+  };
+  if (!data.comment) return toast('Comment text is required', 'error');
+
+  try {
+    const result = await api('POST', '/api/add-comment', data);
+    reviewData.comments.push(result.comment);
+    renderComments(reviewData.comments);
+    toggleAddForm();
+    // Clear form
+    ['addFile','addLine','addComment','addIssue','addSuggestion'].forEach(
+      id => document.getElementById(id).value = '');
+    toast('Comment added', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// ── AI status check ──
+async function checkAI() {
+  try {
+    const data = await api('GET', '/api/ai-status');
+    const el = document.getElementById('aiStatus');
+    if (data.configured) {
+      el.textContent = 'AI: ready';
+      el.classList.add('configured');
+    } else {
+      el.textContent = 'AI: not configured';
+      document.getElementById('generateBtn').title =
+        'Configure Azure OpenAI in review_config.json to enable';
+    }
+  } catch {}
+}
+
+// ── Keyboard shortcut: Enter in URL field ──
+document.getElementById('prUrl').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') loadPR();
+});
+
+// ── Init ──
+checkAI();
+</script>
+</body>
+</html>
