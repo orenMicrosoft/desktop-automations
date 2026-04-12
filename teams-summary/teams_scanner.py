@@ -40,15 +40,25 @@ _SKIP_NAMES = {
     "Radius Requests", "Power Virtual Agents",
 }
 
-# Keywords for relevance scoring
-_ACTION_KEYWORDS = re.compile(
-    r"\b(please review|approve|urgent|asap|blocked|breaking|critical|"
-    r"action required|need your|needs your|waiting on you|assigned to you|"
-    r"can you|could you|would you|ping|reminder|follow[- ]?up|deadline|eod|eow)\b",
+# Keywords for relevance scoring — split into direct requests vs. mere mentions
+# Direct requests: phrased as asking someone to do something
+_DIRECT_REQUEST_RE = re.compile(
+    r"\b(please review|please approve|can you review|could you review|"
+    r"can you approve|could you approve|would you mind|need you to|"
+    r"needs your review|needs your approval|need your help|"
+    r"waiting on you|assigned to you|action required|"
+    r"please take a look|can you check|could you check|"
+    r"please merge|can you merge)\b",
+    re.IGNORECASE,
+)
+# Urgency markers — only "critical" when combined with a direct request or @mention
+_URGENCY_RE = re.compile(
+    r"\b(urgent|asap|blocked|blocking|breaking|critical|p0|p1|hotfix|"
+    r"production issue|prod issue|outage|incident|sev[- ]?[012])\b",
     re.IGNORECASE,
 )
 _PR_KEYWORDS = re.compile(
-    r"\b(pull request|PR \d|merge|code review|review request)\b", re.IGNORECASE
+    r"\b(Pull [Rr]equest \d|PR #?\d|review request|code review needed)\b",
 )
 _QUESTION_RE = re.compile(r"\?\s*$", re.MULTILINE)
 
@@ -274,6 +284,14 @@ def _score_relevance(msg: dict) -> tuple[int, str]:
     Score a message's relevance. Returns (score, label).
     Higher score = more important.
     Labels: "critical", "action", "review", "mention", "question", "info"
+
+    Scoring philosophy:
+    - "critical" = urgent + directed at you (mention + urgency, or direct request + urgency)
+    - "action"   = someone directly asked you/the group to do something
+    - "review"   = PR review request (explicit "Pull Request NNN" or "review request")
+    - "mention"  = you were @mentioned but no specific action requested
+    - "question" = someone asked a question (ends with ?)
+    - "info"     = everything else
     """
     text_parts = (msg.get("content") or []) + [msg.get("subject") or ""]
     full_text = " ".join(text_parts)
@@ -281,53 +299,48 @@ def _score_relevance(msg: dict) -> tuple[int, str]:
     score = 0
     label = "info"
 
-    # +50: Direct @mention of current user
-    if _CURRENT_USER.lower() in full_text.lower():
+    has_mention = _CURRENT_USER.lower() in full_text.lower()
+    has_direct_request = bool(_DIRECT_REQUEST_RE.search(full_text))
+    has_urgency = bool(_URGENCY_RE.search(full_text))
+    has_pr = bool(_PR_KEYWORDS.search(full_text))
+    has_question = bool(_QUESTION_RE.search(full_text))
+
+    # Critical: urgency + (mention OR direct request) — something urgent directed at you
+    if has_urgency and (has_mention or has_direct_request):
+        score += 80
+        label = "critical"
+    # Action: direct request (with or without mention)
+    elif has_direct_request:
         score += 50
-        label = "mention"
-
-    # +40: Action keywords (please review, approve, urgent, etc.)
-    action_matches = _ACTION_KEYWORDS.findall(full_text)
-    if action_matches:
-        score += 40
         label = "action"
-        # Extra boost for urgency
-        if any(w in full_text.lower() for w in ("urgent", "asap", "critical", "blocked", "breaking")):
-            score += 20
-            label = "critical"
-
-    # +30: PR / code review requests
-    if _PR_KEYWORDS.search(full_text):
-        score += 30
-        if label == "info":
-            label = "review"
-
-    # +15: Contains a question
-    if _QUESTION_RE.search(full_text):
+        if has_mention:
+            score += 15  # even more important if directed at you specifically
+    # Mention: you were @mentioned but no specific action
+    elif has_mention:
+        score += 40
+        label = "mention"
+    # Review: PR review request
+    elif has_pr:
+        score += 35
+        label = "review"
+    # Question: someone asked something
+    elif has_question:
         score += 15
-        if label == "info":
-            label = "question"
+        label = "question"
 
-    # +10: Has shared work links (ADO, GitHub)
-    msg_links = _extract_links(full_text)
-    if msg_links:
-        score += 10
-
-    # +5: Has identified senders (real conversation, not system noise)
+    # Small bonuses (don't change the label)
     if senders:
         score += 5
-
-    # +5: Has a subject (channel thread, more structured)
     if msg.get("subject"):
-        score += 5
+        score += 3
 
-    # Time decay: newer messages get a small boost (max +10)
+    # Time decay: newer messages get a small boost (max +8)
     try:
         ts = msg.get("time", "")
         if ts:
             msg_time = datetime.fromisoformat(ts.replace("Z", "+00:00"))
             hours_ago = (datetime.now(timezone.utc) - msg_time).total_seconds() / 3600
-            score += max(0, int(10 - hours_ago))
+            score += max(0, int(8 - hours_ago))
     except Exception:
         pass
 

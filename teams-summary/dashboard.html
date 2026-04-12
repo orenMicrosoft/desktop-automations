@@ -43,8 +43,6 @@ a:hover{text-decoration:underline}
 .msg{padding:14px 18px;border-bottom:1px solid var(--border);transition:background .15s;position:relative}
 .msg:hover{background:var(--card-hover)}
 .msg:last-child{border-bottom:none}
-.msg.clickable{cursor:pointer}
-.msg.clickable:hover .open-hint{opacity:1}
 
 /* Relevance badge */
 .relevance-badge{display:inline-flex;align-items:center;gap:5px;font-size:.7rem;font-weight:600;padding:2px 8px;border-radius:10px;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap}
@@ -55,13 +53,17 @@ a:hover{text-decoration:underline}
 .badge-question{background:rgba(167,139,250,.12);color:var(--purple);border:1px solid rgba(167,139,250,.3)}
 .badge-info{background:rgba(122,130,158,.1);color:var(--muted);border:1px solid rgba(122,130,158,.2)}
 
+/* Open in Teams button */
+.teams-btn{display:inline-flex;align-items:center;gap:5px;background:var(--accent);color:var(--blue);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:.73rem;cursor:pointer;white-space:nowrap;transition:all .2s;text-decoration:none;margin-left:auto;flex-shrink:0}
+.teams-btn:hover{background:rgba(96,165,250,.15);border-color:var(--blue);text-decoration:none;color:#fff}
+.teams-btn svg{width:14px;height:14px;fill:currentColor}
+
 .msg .meta{display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap}
 .msg .time{font-size:.73rem;color:var(--muted);white-space:nowrap}
 .msg .sender{font-weight:600;font-size:.88rem;color:var(--text)}
 .msg .subject{color:var(--yellow);font-size:.84rem;margin-top:4px;display:flex;align-items:center;gap:6px}
 .msg .content{font-size:.84rem;color:var(--muted);margin-top:6px;line-height:1.5;word-break:break-word}
 .msg .content em{color:var(--text);font-style:normal;background:rgba(96,165,250,.15);border-radius:2px;padding:0 2px}
-.msg .open-hint{position:absolute;right:14px;top:14px;font-size:.7rem;color:var(--blue);opacity:0;transition:opacity .2s;display:flex;align-items:center;gap:4px}
 .section-header{padding:10px 18px;background:rgba(15,52,96,.4);font-size:.78rem;font-weight:600;letter-spacing:.5px;color:var(--muted);position:sticky;top:0;z-index:1;backdrop-filter:blur(8px);display:flex;justify-content:space-between}
 
 /* Sidebar */
@@ -127,7 +129,7 @@ a:hover{text-decoration:underline}
   <span class="legend-item"><span class="legend-dot" style="background:var(--blue)"></span>Mention</span>
   <span class="legend-item"><span class="legend-dot" style="background:var(--purple)"></span>Question</span>
   <span class="legend-item"><span class="legend-dot" style="background:var(--muted)"></span>FYI</span>
-  <span style="font-size:.72rem;color:var(--muted);margin-left:auto">Click a message to open in Teams</span>
+  <span style="font-size:.72rem;color:var(--muted);margin-left:auto">↗ button opens message in Teams</span>
 </div>
 
 <div class="kpi-strip" id="kpis"></div>
@@ -397,17 +399,16 @@ function renderMessages() {
       const day = formatDayShort(m.time);
       const senders = (m.senders || []).map(s => `<span class="pill">${esc(s)}</span>`).join(' ')
         || '<span style="color:var(--muted)">Unknown</span>';
-      const hasLink = m.teams_link;
-      const clickAttr = hasLink
-        ? ` class="msg clickable" onclick="window.open('${esc(m.teams_link)}','_blank')" title="Open in Teams"`
-        : ` class="msg"`;
+      const teamsBtn = m.teams_link
+        ? `<a class="teams-btn" href="${esc(m.teams_link)}" target="_blank" title="Open in Teams" onclick="event.stopPropagation()">↗ Teams</a>`
+        : '';
 
-      html += `<div${clickAttr}>`;
-      if (hasLink) html += `<div class="open-hint">↗ Open in Teams</div>`;
+      html += `<div class="msg">`;
       html += `<div class="meta">`;
       html += `<span class="relevance-badge ${badge.css}">${badge.icon} ${badge.label}</span>`;
       html += `<span class="time">${day} ${time}</span>`;
       html += `<span class="sender">${senders}</span>`;
+      html += teamsBtn;
       html += `</div>`;
       if (m.subject) html += `<div class="subject"><span>📌</span> ${esc(m.subject)}</div>`;
       if (m.content && m.content.length) {
