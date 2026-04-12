@@ -274,8 +274,8 @@ def _build_teams_link(thread_id: str | None, message_id: str | None) -> str | No
         return None
     encoded_thread = urllib.parse.quote(thread_id, safe='')
     if message_id:
-        return f"https://teams.microsoft.com/l/message/{encoded_thread}/{message_id}"
-    return f"https://teams.microsoft.com/l/message/{encoded_thread}/"
+        return f"msteams://teams.microsoft.com/l/message/{encoded_thread}/{message_id}"
+    return f"msteams://teams.microsoft.com/l/message/{encoded_thread}/"
 
 
 def _detect_chat_type(window_utf8: str) -> str:
