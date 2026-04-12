@@ -268,14 +268,54 @@ def _extract_message_id(window_utf8: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _build_teams_link(thread_id: str | None, message_id: str | None) -> str | None:
-    """Build a Teams deep link URL from thread and message IDs."""
+_MICROSOFT_TENANT_ID = "72f988bf-86f1-41af-91ab-2d7cd011db47"
+
+
+def _build_thread_group_map(files: list[Path]) -> dict[str, str]:
+    """Scan all files to build a mapping from channel thread IDs to groupIds."""
+    mapping: dict[str, str] = {}
+    gid_re = re.compile(
+        r'groupId[^0-9a-f]{0,10}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'
+    )
+    thread_re = re.compile(r'19:[a-zA-Z0-9_-]{10,}@thread\.(?:tacv2|skype)')
+    for fpath in files:
+        try:
+            text = fpath.read_bytes().decode("ascii", errors="ignore")
+        except Exception:
+            continue
+        for gm in gid_re.finditer(text):
+            gid = gm.group(1)
+            start = max(0, gm.start() - 2000)
+            end = min(len(text), gm.end() + 2000)
+            window = text[start:end]
+            for tm in thread_re.finditer(window):
+                mapping.setdefault(tm.group(), gid)
+    return mapping
+
+
+def _build_teams_link(
+    thread_id: str | None,
+    message_id: str | None,
+    group_map: dict[str, str] | None = None,
+) -> str | None:
+    """Build a Teams deep link that opens directly in the desktop app."""
     if not thread_id:
         return None
     encoded_thread = urllib.parse.quote(thread_id, safe='')
+
+    # Chat threads (DMs, group chats, meetings) — use /l/chat/ path
+    if thread_id.endswith(("@thread.v2", "@unq.gbl.spaces")):
+        return f"msteams://teams.microsoft.com/l/chat/{encoded_thread}/0"
+
+    # Channel threads — need groupId and tenantId
+    group_id = (group_map or {}).get(thread_id)
+    base = f"msteams://teams.microsoft.com/l/message/{encoded_thread}/{message_id or '0'}"
+    params = [f"tenantId={_MICROSOFT_TENANT_ID}"]
+    if group_id:
+        params.append(f"groupId={group_id}")
     if message_id:
-        return f"msteams://teams.microsoft.com/l/message/{encoded_thread}/{message_id}"
-    return f"msteams://teams.microsoft.com/l/message/{encoded_thread}/"
+        params.append(f"parentMessageId={message_id}")
+    return f"{base}?{'&'.join(params)}"
 
 
 def _detect_chat_type(window_utf8: str) -> str:
@@ -422,6 +462,9 @@ def _do_scan(db_dir: Path, days_back: int, result: dict) -> dict:
         result["error"] = "No .ldb/.log files found in Teams IndexedDB"
         return result
 
+    # Build thread→groupId map for channel deep links
+    group_map = _build_thread_group_map(files)
+
     now = datetime.now(timezone.utc)
 
     date_prefixes = set()
@@ -466,7 +509,7 @@ def _do_scan(db_dir: Path, days_back: int, result: dict) -> dict:
             # Extract IDs for Teams deep link
             thread_id = _extract_thread_id(window_utf8)
             message_id = _extract_message_id(window_utf8)
-            teams_link = _build_teams_link(thread_id, message_id)
+            teams_link = _build_teams_link(thread_id, message_id, group_map)
             chat_type = _detect_chat_type(window_utf8)
 
             content_key = contents[0][:80] if contents else ""
