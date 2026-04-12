@@ -4,66 +4,86 @@
 <meta charset="utf-8"/>
 <title>Teams Summary</title>
 <style>
-:root{--bg:#1a1a2e;--card:#16213e;--accent:#0f3460;--highlight:#e94560;--text:#eee;--muted:#8892b0;--border:#233554;--green:#4ade80;--yellow:#fbbf24;--blue:#60a5fa;--pill:#0f3460}
+:root{--bg:#0f0f1a;--card:#1a1a2e;--card-hover:#1e2240;--accent:#0f3460;--highlight:#e94560;--text:#e8e8f0;--muted:#7a829e;--border:#2a2d4a;--green:#4ade80;--yellow:#fbbf24;--blue:#60a5fa;--pill:#1a2744;--success-bg:rgba(74,222,128,.08);--error-bg:rgba(233,69,96,.08)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 a{color:var(--blue);text-decoration:none}
 a:hover{text-decoration:underline}
 
 /* Header */
-.header{background:var(--card);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-.header h1{font-size:1.3rem;display:flex;align-items:center;gap:8px}
-.header .actions{margin-left:auto;display:flex;gap:8px;align-items:center}
-.header select,.header button{background:var(--accent);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 14px;cursor:pointer;font-size:.85rem}
-.header button:hover{background:var(--highlight)}
-.header .scan-status{font-size:.8rem;color:var(--muted)}
+.header{background:var(--card);border-bottom:1px solid var(--border);padding:16px 28px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.header h1{font-size:1.3rem;display:flex;align-items:center;gap:10px;font-weight:600}
+.header .actions{margin-left:auto;display:flex;gap:10px;align-items:center}
+.header select,.header button{background:var(--accent);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 16px;cursor:pointer;font-size:.85rem;transition:all .2s}
+.header button:hover{background:var(--highlight);border-color:var(--highlight)}
+.header button:disabled{opacity:.5;cursor:not-allowed}
+.header .scan-status{font-size:.8rem;color:var(--muted);min-width:100px}
 
 /* KPI strip */
-.kpi-strip{display:flex;gap:12px;padding:16px 24px;flex-wrap:wrap}
-.kpi{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 20px;min-width:140px;flex:1}
-.kpi .label{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
-.kpi .value{font-size:1.6rem;font-weight:700;margin-top:4px}
+.kpi-strip{display:flex;gap:14px;padding:18px 28px;flex-wrap:wrap}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 22px;min-width:140px;flex:1;transition:transform .15s}
+.kpi:hover{transform:translateY(-2px)}
+.kpi .label{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;font-weight:500}
+.kpi .value{font-size:1.8rem;font-weight:700;margin-top:4px}
+.kpi .sub{font-size:.72rem;color:var(--muted);margin-top:2px}
 
 /* Layout */
-.main{display:grid;grid-template-columns:1fr 320px;gap:16px;padding:0 24px 24px;align-items:start}
-@media(max-width:900px){.main{grid-template-columns:1fr}}
+.main{display:grid;grid-template-columns:1fr 340px;gap:18px;padding:0 28px 28px;align-items:start}
+@media(max-width:1000px){.main{grid-template-columns:1fr}}
 
-/* Messages list */
-.panel{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden}
-.panel-title{padding:12px 16px;font-weight:600;font-size:.95rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
-.msg-list{max-height:calc(100vh - 250px);overflow-y:auto}
-.msg{padding:12px 16px;border-bottom:1px solid var(--border);cursor:default;transition:background .15s}
-.msg:hover{background:rgba(255,255,255,.04)}
-.msg .time{font-size:.75rem;color:var(--muted)}
-.msg .sender{font-weight:600;font-size:.9rem;margin-top:2px}
-.msg .subject{color:var(--yellow);font-size:.85rem;margin-top:3px}
-.msg .content{font-size:.85rem;color:var(--muted);margin-top:4px;line-height:1.4;word-break:break-word}
+/* Panels */
+.panel{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.panel-title{padding:14px 18px;font-weight:600;font-size:.95rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.panel-title .count{color:var(--muted);font-size:.8rem;font-weight:400}
+
+/* Messages */
+.msg-list{max-height:calc(100vh - 260px);overflow-y:auto}
+.msg{padding:14px 18px;border-bottom:1px solid var(--border);cursor:default;transition:background .15s}
+.msg:hover{background:var(--card-hover)}
+.msg:last-child{border-bottom:none}
+.msg .meta{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.msg .time{font-size:.73rem;color:var(--muted);white-space:nowrap}
+.msg .sender{font-weight:600;font-size:.9rem;color:var(--text)}
+.msg .subject{color:var(--yellow);font-size:.84rem;margin-top:4px;display:flex;align-items:center;gap:6px}
+.msg .content{font-size:.84rem;color:var(--muted);margin-top:6px;line-height:1.5;word-break:break-word}
 .msg .content em{color:var(--text);font-style:normal}
-.day-header{padding:8px 16px;background:var(--accent);font-size:.8rem;font-weight:600;letter-spacing:.5px;color:var(--muted);position:sticky;top:0;z-index:1}
+.day-header{padding:8px 18px;background:rgba(15,52,96,.4);font-size:.78rem;font-weight:600;letter-spacing:.5px;color:var(--muted);position:sticky;top:0;z-index:1;backdrop-filter:blur(8px)}
 
 /* Sidebar */
 .sidebar{display:flex;flex-direction:column;gap:16px}
+.list-scroll{max-height:200px;overflow-y:auto}
 .people-list,.subject-list,.links-list{padding:0;list-style:none}
-.people-list li,.subject-list li,.links-list li{padding:6px 16px;font-size:.85rem;border-bottom:1px solid var(--border)}
+.people-list li,.subject-list li,.links-list li{padding:8px 18px;font-size:.84rem;border-bottom:1px solid var(--border);transition:background .15s}
+.people-list li:hover,.subject-list li:hover,.links-list li:hover{background:var(--card-hover)}
 .people-list li:last-child,.subject-list li:last-child,.links-list li:last-child{border-bottom:none}
 .links-list li{word-break:break-all;font-size:.8rem}
 
 /* Filter bar */
-.filter-bar{padding:8px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px}
-.filter-bar input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:.85rem}
+.filter-bar{padding:10px 18px;border-bottom:1px solid var(--border);display:flex;gap:8px}
+.filter-bar input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:.85rem;transition:border-color .2s}
+.filter-bar input:focus{outline:none;border-color:var(--blue)}
 .filter-bar input::placeholder{color:var(--muted)}
 
-/* Error / empty */
-.empty{padding:40px 20px;text-align:center;color:var(--muted)}
-.error{color:var(--highlight);padding:16px;text-align:center}
+/* Status states */
+.error-banner{background:var(--error-bg);border:1px solid rgba(233,69,96,.3);border-radius:8px;padding:14px 18px;margin:18px 28px;color:var(--highlight);font-size:.9rem;display:flex;align-items:center;gap:10px}
+.error-banner .icon{font-size:1.2rem}
+.scanning-overlay{text-align:center;padding:40px;color:var(--muted)}
+.scanning-overlay .spinner{display:inline-block;width:24px;height:24px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin-bottom:12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{padding:40px 20px;text-align:center;color:var(--muted);font-size:.9rem;line-height:1.5}
+.empty .icon{font-size:2rem;margin-bottom:8px}
 
 /* Scrollbar */
 ::-webkit-scrollbar{width:6px}
-::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 
 /* Pill tags */
-.pill{display:inline-block;background:var(--pill);border-radius:10px;padding:1px 8px;font-size:.75rem;margin:1px 2px}
+.pill{display:inline-block;background:var(--pill);border-radius:12px;padding:2px 10px;font-size:.73rem;margin:1px 3px;border:1px solid var(--border)}
+
+/* Link categories */
+.link-icon{margin-right:4px;font-size:.85rem}
 </style>
 </head>
 <body>
@@ -72,49 +92,70 @@ a:hover{text-decoration:underline}
   <h1>💬 Teams Summary</h1>
   <div class="actions">
     <select id="daysSelect">
-      <option value="1">Last 1 day</option>
+      <option value="1">Last 24 hours</option>
       <option value="3" selected>Last 3 days</option>
       <option value="7">Last 7 days</option>
+      <option value="14">Last 2 weeks</option>
     </select>
     <button id="refreshBtn" onclick="triggerScan()">🔄 Refresh</button>
     <span class="scan-status" id="scanStatus">Loading…</span>
   </div>
 </div>
 
+<div id="errorBanner"></div>
 <div class="kpi-strip" id="kpis"></div>
 
 <div class="main">
   <div class="panel" id="messagesPanel">
     <div class="panel-title">
       <span>Recent Messages</span>
-      <span id="msgCount" style="color:var(--muted);font-size:.8rem"></span>
+      <span class="count" id="msgCount"></span>
     </div>
     <div class="filter-bar">
-      <input type="text" id="searchBox" placeholder="Filter messages…" oninput="renderMessages()"/>
+      <input type="text" id="searchBox" placeholder="🔍 Filter by name, subject, or content…" oninput="renderMessages()"/>
     </div>
     <div class="msg-list" id="msgList">
-      <div class="empty">Click <b>Refresh</b> to scan your Teams cache</div>
+      <div class="scanning-overlay">
+        <div class="spinner"></div>
+        <div>Loading scan data…</div>
+      </div>
     </div>
   </div>
 
   <div class="sidebar">
     <div class="panel">
-      <div class="panel-title">👥 People</div>
-      <ul class="people-list" id="peopleList"></ul>
+      <div class="panel-title">
+        <span>👥 People</span>
+        <span class="count" id="peopleCount"></span>
+      </div>
+      <div class="list-scroll">
+        <ul class="people-list" id="peopleList"></ul>
+      </div>
     </div>
     <div class="panel">
-      <div class="panel-title">📌 Subjects</div>
-      <ul class="subject-list" id="subjectList"></ul>
+      <div class="panel-title">
+        <span>📌 Subjects</span>
+        <span class="count" id="subjectCount"></span>
+      </div>
+      <div class="list-scroll">
+        <ul class="subject-list" id="subjectList"></ul>
+      </div>
     </div>
     <div class="panel">
-      <div class="panel-title">🔗 Links</div>
-      <ul class="links-list" id="linksList"></ul>
+      <div class="panel-title">
+        <span>🔗 Links</span>
+        <span class="count" id="linkCount"></span>
+      </div>
+      <div class="list-scroll">
+        <ul class="links-list" id="linksList"></ul>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
 let DATA = null;
+let SCANNING = false;
 
 async function loadData() {
   try {
@@ -131,67 +172,148 @@ async function triggerScan() {
   const btn = document.getElementById('refreshBtn');
   const status = document.getElementById('scanStatus');
   btn.disabled = true;
-  status.textContent = 'Scanning…';
+  SCANNING = true;
+  status.textContent = '⏳ Scanning…';
+
+  // Show scanning overlay in messages area
+  document.getElementById('msgList').innerHTML = `
+    <div class="scanning-overlay">
+      <div class="spinner"></div>
+      <div>Scanning Teams cache (${days} day${days > 1 ? 's' : ''})…</div>
+      <div style="font-size:.75rem;margin-top:8px;color:var(--muted)">This may take 10-30 seconds</div>
+    </div>`;
+
   try {
     await fetch(`/api/scan?days=${days}`, { method: 'POST' });
-    // Poll until new data appears
+    // Poll until scan completes
     let attempts = 0;
+    const startedAt = DATA?.scanned_at;
     const poll = setInterval(async () => {
       attempts++;
       try {
-        const resp = await fetch('/api/scan-data');
-        const data = await resp.json();
-        if (data && !data.error?.includes('No scan yet') && data.scanned_at !== DATA?.scanned_at) {
+        // Check if still scanning
+        const scanResp = await fetch('/api/scanning');
+        const scanStatus = await scanResp.json();
+
+        if (!scanStatus.scanning || attempts > 90) {
+          // Scan finished — load new data
+          const resp = await fetch('/api/scan-data');
+          const data = await resp.json();
           clearInterval(poll);
           DATA = data;
+          SCANNING = false;
           render();
           btn.disabled = false;
-          status.textContent = `Scanned ${new Date(data.scanned_at).toLocaleTimeString()}`;
-        } else if (attempts > 60) {
+          if (data.error) {
+            status.textContent = '⚠️ Scan had issues';
+          } else {
+            const time = data.scanned_at ? new Date(data.scanned_at).toLocaleTimeString() : 'now';
+            status.textContent = `✅ Scanned at ${time}`;
+          }
+        }
+      } catch(e) {
+        if (attempts > 90) {
           clearInterval(poll);
           btn.disabled = false;
-          status.textContent = 'Scan timeout';
+          SCANNING = false;
+          status.textContent = '❌ Scan timeout';
         }
-      } catch(e) {}
+      }
     }, 1000);
   } catch (e) {
     btn.disabled = false;
-    status.textContent = 'Scan failed';
+    SCANNING = false;
+    status.textContent = '❌ Scan failed';
   }
 }
 
 function render() {
   if (!DATA) return;
+
+  const banner = document.getElementById('errorBanner');
   if (DATA.error) {
-    document.getElementById('msgList').innerHTML = `<div class="error">${esc(DATA.error)}</div>`;
-    document.getElementById('scanStatus').textContent = 'Error';
-    return;
+    banner.innerHTML = `<div class="error-banner"><span class="icon">⚠️</span><span>${esc(DATA.error)}</span></div>`;
+  } else {
+    banner.innerHTML = '';
   }
 
   const scannedAt = DATA.scanned_at ? new Date(DATA.scanned_at).toLocaleTimeString() : '—';
-  document.getElementById('scanStatus').textContent = `Last scan: ${scannedAt}`;
+  if (!SCANNING) {
+    const statusEl = document.getElementById('scanStatus');
+    if (DATA.error) {
+      statusEl.textContent = `⚠️ ${scannedAt}`;
+    } else {
+      statusEl.textContent = `Last scan: ${scannedAt}`;
+    }
+  }
 
   // KPIs
-  const kpis = document.getElementById('kpis');
-  kpis.innerHTML = `
-    <div class="kpi"><div class="label">Messages</div><div class="value">${DATA.messages.length}</div></div>
-    <div class="kpi"><div class="label">People</div><div class="value">${DATA.people.length}</div></div>
-    <div class="kpi"><div class="label">Subjects</div><div class="value">${DATA.subjects.length}</div></div>
-    <div class="kpi"><div class="label">Shared Links</div><div class="value">${DATA.links.length}</div></div>
-  `;
+  const msgs = DATA.messages || [];
+  const people = DATA.people || [];
+  const subjects = DATA.subjects || [];
+  const links = DATA.links || [];
+
+  // Count unique days
+  const uniqueDays = new Set(msgs.map(m => m.time?.slice(0, 10)).filter(Boolean));
+
+  document.getElementById('kpis').innerHTML = `
+    <div class="kpi">
+      <div class="label">Messages</div>
+      <div class="value">${msgs.length}</div>
+      <div class="sub">${uniqueDays.size} day${uniqueDays.size !== 1 ? 's' : ''}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">People</div>
+      <div class="value">${people.length}</div>
+      <div class="sub">unique contacts</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Conversations</div>
+      <div class="value">${subjects.length}</div>
+      <div class="sub">active threads</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Shared Links</div>
+      <div class="value">${links.length}</div>
+      <div class="sub">work items & PRs</div>
+    </div>`;
 
   // Sidebar: People
+  document.getElementById('peopleCount').textContent = people.length;
   const pl = document.getElementById('peopleList');
-  pl.innerHTML = DATA.people.map(p => `<li>${esc(p)}</li>`).join('') || '<li class="empty">None</li>';
+  if (people.length) {
+    pl.innerHTML = people.map(p =>
+      `<li onclick="filterBy('${esc(p)}')" style="cursor:pointer" title="Click to filter">${esc(p)}</li>`
+    ).join('');
+  } else {
+    pl.innerHTML = '<li class="empty" style="padding:20px;text-align:center">No people found</li>';
+  }
 
   // Sidebar: Subjects
+  document.getElementById('subjectCount').textContent = subjects.length;
   const sl = document.getElementById('subjectList');
-  sl.innerHTML = DATA.subjects.map(s => `<li>${esc(s)}</li>`).join('') || '<li class="empty">None</li>';
+  if (subjects.length) {
+    sl.innerHTML = subjects.map(s =>
+      `<li onclick="filterBy('${esc(s).slice(0,30)}')" style="cursor:pointer" title="Click to filter">${esc(s)}</li>`
+    ).join('');
+  } else {
+    sl.innerHTML = '<li class="empty" style="padding:20px;text-align:center">No subjects found</li>';
+  }
 
   // Sidebar: Links
+  document.getElementById('linkCount').textContent = links.length;
   const ll = document.getElementById('linksList');
-  ll.innerHTML = DATA.links.slice(0, 20).map(u => `<li><a href="${esc(u)}" target="_blank">${shortenUrl(u)}</a></li>`).join('') || '<li class="empty">None</li>';
+  if (links.length) {
+    ll.innerHTML = links.slice(0, 25).map(u => `<li>${linkIcon(u)}<a href="${esc(u)}" target="_blank">${shortenUrl(u)}</a></li>`).join('');
+  } else {
+    ll.innerHTML = '<li class="empty" style="padding:20px;text-align:center">No links found</li>';
+  }
 
+  renderMessages();
+}
+
+function filterBy(text) {
+  document.getElementById('searchBox').value = text;
   renderMessages();
 }
 
@@ -211,33 +333,41 @@ function renderMessages() {
     return haystack.includes(filter);
   });
 
-  countEl.textContent = `${msgs.length} shown`;
+  countEl.textContent = `${msgs.length} of ${DATA.messages.length}`;
 
   if (!msgs.length) {
-    container.innerHTML = '<div class="empty">No messages match your filter</div>';
+    if (!DATA.messages.length) {
+      container.innerHTML = `
+        <div class="empty">
+          <div class="icon">📭</div>
+          <div>No messages found in the cache.</div>
+          <div style="font-size:.8rem;margin-top:8px">Try a wider date range or make sure Teams is running.</div>
+        </div>`;
+    } else {
+      container.innerHTML = '<div class="empty"><div class="icon">🔍</div>No messages match your filter</div>';
+    }
     return;
   }
 
   // Group by day
   const byDay = {};
   msgs.forEach(m => {
-    const day = m.time.slice(0, 10);
+    const day = m.time?.slice(0, 10) || 'Unknown';
     (byDay[day] = byDay[day] || []).push(m);
   });
 
   let html = '';
   Object.keys(byDay).sort().reverse().forEach(day => {
     const dayLabel = formatDay(day);
-    html += `<div class="day-header">${dayLabel} (${byDay[day].length})</div>`;
+    html += `<div class="day-header">${dayLabel} — ${byDay[day].length} message${byDay[day].length > 1 ? 's' : ''}</div>`;
     byDay[day].forEach(m => {
-      const time = m.time.slice(11, 19);
-      const senders = (m.senders || []).join(', ') || '—';
+      const time = formatTime(m.time);
+      const senders = (m.senders || []).map(s => `<span class="pill">${esc(s)}</span>`).join(' ') || '<span style="color:var(--muted)">Unknown sender</span>';
       html += `<div class="msg">`;
-      html += `<div class="time">${time} UTC</div>`;
-      html += `<div class="sender">${esc(senders)}</div>`;
-      if (m.subject) html += `<div class="subject">📌 ${esc(m.subject)}</div>`;
+      html += `<div class="meta"><span class="time">${time}</span><span class="sender">${senders}</span></div>`;
+      if (m.subject) html += `<div class="subject"><span>📌</span> ${esc(m.subject)}</div>`;
       if (m.content && m.content.length) {
-        html += `<div class="content">${m.content.map(c => esc(c.slice(0, 250))).join('<br/>')}</div>`;
+        html += `<div class="content">${m.content.map(c => highlightFilter(esc(c.slice(0, 300)), filter)).join('<br/>')}</div>`;
       }
       html += '</div>';
     });
@@ -246,36 +376,60 @@ function renderMessages() {
   container.innerHTML = html;
 }
 
+function highlightFilter(text, filter) {
+  if (!filter || filter.length < 2) return text;
+  const escaped = filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.replace(new RegExp(`(${escaped})`, 'gi'), '<em style="background:rgba(96,165,250,.2);border-radius:2px;padding:0 2px">$1</em>');
+}
+
+function formatTime(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch { return iso.slice(11, 16); }
+}
+
 function formatDay(iso) {
-  const d = new Date(iso + 'T00:00:00Z');
+  if (!iso || iso === 'Unknown') return 'Unknown date';
+  const d = new Date(iso + 'T12:00:00Z');
   const now = new Date();
   const today = now.toISOString().slice(0,10);
   const yest = new Date(now - 86400000).toISOString().slice(0,10);
-  if (iso === today) return 'Today';
-  if (iso === yest) return 'Yesterday';
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  if (iso === today) return '📅 Today';
+  if (iso === yest) return '📅 Yesterday';
+  return '📅 ' + d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+function linkIcon(u) {
+  if (u.includes('pullrequest')) return '<span class="link-icon">🔀</span>';
+  if (u.includes('_build')) return '<span class="link-icon">🏗️</span>';
+  if (u.includes('workitems') || u.includes('_work')) return '<span class="link-icon">📋</span>';
+  if (u.includes('github.com')) return '<span class="link-icon">🐙</span>';
+  if (u.includes('_git')) return '<span class="link-icon">📁</span>';
+  return '<span class="link-icon">🔗</span>';
 }
 
 function shortenUrl(u) {
   try {
     const url = new URL(u);
     let path = url.pathname;
-    // Shorten ADO URLs
-    if (path.includes('pullrequest')) return '🔀 PR ' + path.split('pullrequest/').pop();
-    if (path.includes('_build')) return '🏗️ Build ' + (url.searchParams.get('buildId') || url.searchParams.get('definitionId') || '');
-    if (path.includes('workitems')) return '📋 Work Item ' + path.split('/').pop();
-    if (path.includes('_git')) return '📁 ' + path.split('_git/').pop().split('/')[0];
-    return url.hostname + path.slice(0, 40);
-  } catch { return u.slice(0, 60); }
+    if (path.includes('pullrequest')) return 'PR ' + path.split('pullrequest/').pop();
+    if (path.includes('_build')) return 'Build ' + (url.searchParams.get('buildId') || url.searchParams.get('definitionId') || path.split('/').pop());
+    if (path.includes('workitems')) return 'Work Item ' + path.split('/').pop();
+    if (path.includes('_git')) return path.split('_git/').pop().split('/').slice(0,2).join('/');
+    return url.hostname.replace('dev.azure.com','ADO') + path.slice(0, 45);
+  } catch { return u.slice(0, 65); }
 }
 
 function esc(s) {
+  if (!s) return '';
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
 }
 
-// Load on start
+// Auto-load on start
 loadData();
 </script>
 </body>

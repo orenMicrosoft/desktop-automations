@@ -8,18 +8,15 @@ extract message fragments: timestamps, sender names, subjects, content, and
 shared links.
 
 Limitations:
-  - Cannot reliably distinguish unread vs. read messages (no unread flag
-    in the raw binary).  We surface the *most recent* cached messages and
-    let the user decide.
-  - Content is extracted heuristically — some fragments may be truncated or
-    contain minor artifacts.
+  - Cannot reliably distinguish unread vs. read messages.  We surface the
+    *most recent* cached messages and let the user decide.
+  - Content is extracted heuristically — some fragments may be truncated.
 """
 
 import os
 import re
 import shutil
 import tempfile
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -31,68 +28,216 @@ _TEAMS_IDB_REL = (
 )
 TEAMS_IDB_DIR = Path(os.environ.get("LOCALAPPDATA", "")) / _TEAMS_IDB_REL
 
+# Names to ignore (bots, services, generic labels)
+_SKIP_NAMES = {
+    "ES Chat", "Email Connector", "Support", "Microsoft Teams",
+    "Unknown User", "Deleted User", "Teams Bot", "Power Automate",
+    "Forms", "Planner", "Wiki", "Channel", "General",
+    "Radius Requests", "Power Virtual Agents",
+}
+
 
 def _copy_to_temp(src: Path) -> Path:
-    """Copy the LevelDB dir to a temp folder to avoid file-lock conflicts."""
+    """Copy the LevelDB dir to a temp folder, skipping locked files."""
     dst = Path(tempfile.mkdtemp(prefix="teams_idb_"))
-    shutil.copytree(src, dst / "idb", dirs_exist_ok=True)
-    return dst / "idb"
+    target = dst / "idb"
+    target.mkdir(parents=True, exist_ok=True)
+    errors = []
+    for item in src.iterdir():
+        dest_item = target / item.name
+        try:
+            if item.is_file():
+                shutil.copy2(item, dest_item)
+            elif item.is_dir():
+                shutil.copytree(item, dest_item, dirs_exist_ok=True)
+        except PermissionError:
+            # LOCK file and other locked files — skip them, they're not needed
+            errors.append(item.name)
+        except Exception as exc:
+            errors.append(f"{item.name}: {exc}")
+    if errors:
+        # Only warn, don't fail — the data files (.ldb, .log) are what matter
+        print(f"  Skipped locked files: {', '.join(errors)}")
+    return target
+
+
+def _is_person_name(name: str) -> bool:
+    """Check if a string looks like a real person name (First Last)."""
+    if not name or len(name) < 4 or name in _SKIP_NAMES:
+        return False
+    # Must match "Firstname Lastname" pattern (Latin or accented chars)
+    return bool(re.match(
+        r"^[A-Z\u00C0-\u024F][a-z\u00C0-\u024F]+\s+[A-Z\u00C0-\u024F]", name
+    ))
 
 
 def _extract_people(text: str) -> list[str]:
-    """Pull display-names from Skype-mention JSON fragments."""
-    names = re.findall(r'"displayName"\s*:\s*"([^"]{2,100})"', text)
-    skip = {"ES Chat", "Email Connector", "Support", "Microsoft Teams"}
+    """Pull display-names from JSON mention blocks and imdisplayname fields."""
     seen = set()
     out = []
-    for n in names:
+
+    # Pattern 1: JSON "displayName":"..." blocks (mentions in message HTML)
+    for n in re.findall(r'"displayName"\s*:\s*"([^"]{2,100})"', text):
         n = n.strip()
-        # Only keep names that look like real person names (First Last)
-        if (
-            n not in skip
-            and n not in seen
-            and len(n) > 3
-            and re.match(r"^[A-Z][a-z]+ [A-Z]", n)  # e.g. "Maor Frankel"
-        ):
+        if _is_person_name(n) and n not in seen:
             seen.add(n)
             out.append(n)
+
+    # Pattern 2: imdisplayname fields
+    for n in re.findall(r'imdisplayname["\s:]+([A-Z][^"\x00\x01]{2,60})', text):
+        n = n.strip().rstrip('\\')
+        if _is_person_name(n) and n not in seen:
+            seen.add(n)
+            out.append(n)
+
+    # Pattern 3: "creator"/"from" with displayName in nearby JSON
+    for n in re.findall(r'"(?:creator|from)"[^}]{0,200}"displayName"\s*:\s*"([^"]{2,80})"', text):
+        n = n.strip()
+        if _is_person_name(n) and n not in seen:
+            seen.add(n)
+            out.append(n)
+
     return out
 
 
 def _extract_subjects(text: str) -> list[str]:
-    # Subjects stored with binary length-prefixed format or JSON-style
-    raw = re.findall(r'"subject".{0,5}"?\d?([A-Za-z][^"\x00]{5,200})', text)
+    """Extract conversation subjects from JSON and binary fields."""
     seen = set()
     out = []
-    for s in raw:
-        # Remove any embedded control characters
+
+    # Pattern 1: JSON "subject":"..." (clean JSON)
+    for s in re.findall(r'"subject"\s*:\s*"([^"]{4,200})"', text):
         s = re.sub(r"[\x00-\x1f]", "", s).strip()
-        # Filter garbled subjects: must start with uppercase and be a real phrase
-        if (
-            len(s) > 8
-            and s[0].isupper()
-            and s not in seen
-            and not re.match(r"^(starta|start[a-z])", s, re.IGNORECASE)
-            and re.search(r"[a-zA-Z]{3,}\s+[a-zA-Z]{2,}", s)
-        ):
+        if _is_valid_subject(s) and s not in seen:
             seen.add(s)
             out.append(s)
+
+    # Pattern 2: Binary length-prefixed subjects
+    for s in re.findall(r'"subject".{0,5}"?\d?([A-Za-z][^"\x00]{5,200})', text):
+        s = re.sub(r"[\x00-\x1f]", "", s).strip()
+        if _is_valid_subject(s) and s not in seen:
+            seen.add(s)
+            out.append(s)
+
+    # Pattern 3: threadtopic field
+    for s in re.findall(r'threadtopic["\s:]+([A-Z][^"\x00]{4,200})', text):
+        s = re.sub(r"[\x00-\x1f]", "", s).strip()
+        if _is_valid_subject(s) and s not in seen:
+            seen.add(s)
+            out.append(s)
+
     return out
 
 
+def _is_valid_subject(s: str) -> bool:
+    """Check if a string looks like a real conversation subject."""
+    if len(s) < 5:
+        return False
+    # Must start with uppercase letter and contain at least one space
+    if not s[0].isupper():
+        return False
+    if not re.search(r"[a-zA-Z]{2,}\s+[a-zA-Z]{2,}", s):
+        return False
+    # Skip garbled/binary-looking strings
+    if re.match(r"^(starta|start[a-z])", s, re.IGNORECASE):
+        return False
+    # Skip strings that are mostly non-alpha
+    alpha_ratio = sum(c.isalpha() or c.isspace() for c in s) / len(s)
+    return alpha_ratio > 0.7
+
+
 def _extract_links(text: str) -> list[str]:
-    urls = re.findall(
-        r'"url":"(https://[^"]+(?:pullrequest|build|_git|workitems|_work)[^"]*)"',
-        text,
-    )
+    """Extract work-related URLs (ADO PRs, builds, GitHub, etc.)."""
+    urls = []
+
+    # ADO / GitHub URLs in JSON
+    for u in re.findall(
+        r'"(?:url|href|link)"\s*:\s*"(https://[^"]+)"', text
+    ):
+        if any(kw in u for kw in (
+            "pullrequest", "build", "_git", "workitems", "_work",
+            "github.com", "dev.azure.com", "visualstudio.com"
+        )):
+            urls.append(u)
+
+    # Bare URLs in content (HTML href)
+    for u in re.findall(r'href="(https://[^"]+)"', text):
+        if any(kw in u for kw in (
+            "pullrequest", "build", "_git", "workitems", "_work",
+            "github.com", "dev.azure.com", "visualstudio.com"
+        )):
+            urls.append(u)
+
     return list(dict.fromkeys(urls))
 
 
 def _clean_html(s: str) -> str:
+    """Strip HTML tags, entities, and IndexedDB binary artifacts."""
     s = re.sub(r"<[^>]+>", " ", s)
     s = re.sub(r"&[a-z]+;", " ", s)
+    s = re.sub(r"&#\d+;", " ", s)
     s = re.sub(r"\\[nrt]", " ", s)
+    # Remove leading binary field names that leak into content
+    s = re.sub(r'^(?:topic|messagePreview|subject|threadtopic)["\s#:]+', '', s)
     return re.sub(r"\s+", " ", s).strip()
+
+
+def _extract_message_content(window_raw: bytes, window_utf8: str) -> list[str]:
+    """Extract readable message content from a binary window using multiple strategies."""
+    contents = []
+    seen_content = set()
+
+    def _add_content(text: str, min_len: int = 15):
+        clean = _clean_html(text)
+        if len(clean) < min_len:
+            return
+        # Skip technical/internal strings
+        if any(skip in clean for skip in (
+            "19:", "8:orgid", "@thread", "schema.skype",
+            "Microsoft Teams", "urn:", "cid:", "blob:",
+            "indexeddb://", "data:image", "emoticon",
+            "avatarUrl", "mailhookservice",
+        )):
+            return
+        # Skip base64-like strings (long runs of alphanumeric with +/= chars)
+        if re.match(r'^[A-Za-z0-9+/=]{40,}$', clean):
+            return
+        # Skip strings that look like JSON or technical data
+        if clean.startswith('{') or clean.startswith('[') or clean.startswith('"'):
+            return
+        # Skip strings with too few spaces relative to length (garbled binary)
+        if len(clean) > 30 and clean.count(' ') < len(clean) / 20:
+            return
+        key = clean[:100].lower()
+        if key not in seen_content:
+            seen_content.add(key)
+            contents.append(clean[:500])
+
+    # Strategy 1: JSON "content":"<html>..." fields
+    for m in re.finditer(r'"content"\s*:\s*"((?:[^"\\]|\\.)+")', window_utf8):
+        decoded = m.group(1).rstrip('"').replace('\\"', '"')
+        _add_content(decoded)
+
+    # Strategy 2: HTML body fragments (<p>..., <div>..., etc.)
+    for m in re.finditer(r'<(?:p|div|span)[^>]*>([^<]{10,500})', window_utf8):
+        _add_content(m.group(1))
+
+    # Strategy 3: UTF-16LE encoded text (common in IndexedDB binary format)
+    for u16 in re.finditer(rb"(?:[\x20-\x7e]\x00){10,}", window_raw):
+        try:
+            decoded = u16.group().decode("utf-16-le").strip()
+            if len(decoded) > 15 and re.search(r"[a-zA-Z]{3,}\s+[a-zA-Z]{2,}", decoded):
+                _add_content(decoded)
+        except Exception:
+            pass
+
+    # Strategy 4: Plain text runs in UTF-8 (longer readable sequences)
+    for m in re.finditer(r'[\x20-\x7e]{30,}', window_utf8):
+        text = m.group().strip()
+        if re.search(r"[a-zA-Z]{3,}\s+[a-zA-Z]{3,}", text):
+            _add_content(text, min_len=25)
+
+    return contents[:5]
 
 
 def scan(days_back: int = 3) -> dict:
@@ -105,12 +250,13 @@ def scan(days_back: int = 3) -> dict:
       scanned_at – str              ISO timestamp of the scan
       error    – str | None         error message if scan failed
     """
+    now = datetime.now(timezone.utc)
     result = {
         "people": [],
         "subjects": [],
         "links": [],
         "messages": [],
-        "scanned_at": datetime.now(timezone.utc).isoformat(),
+        "scanned_at": now.astimezone().isoformat(),
         "error": None,
     }
 
@@ -118,7 +264,6 @@ def scan(days_back: int = 3) -> dict:
         result["error"] = f"Teams IndexedDB not found at {TEAMS_IDB_DIR}"
         return result
 
-    # Copy DB to temp to avoid lock conflicts with running Teams
     try:
         tmp_dir = _copy_to_temp(TEAMS_IDB_DIR)
     except Exception as exc:
@@ -141,12 +286,13 @@ def _do_scan(db_dir: Path, days_back: int, result: dict) -> dict:
         result["error"] = "No .ldb/.log files found in Teams IndexedDB"
         return result
 
-    # Compute the date prefix filter (e.g. "2026-04-0")
     now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=days_back)
+
+    # Build set of recent date prefixes for fast filtering
     date_prefixes = set()
     for d in range(days_back + 1):
-        dt = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-        dt -= timedelta(days=d)
+        dt = now - timedelta(days=d)
         date_prefixes.add(dt.strftime("%Y-%m-%d"))
 
     all_people: set[str] = set()
@@ -156,56 +302,43 @@ def _do_scan(db_dir: Path, days_back: int, result: dict) -> dict:
     seen_keys: set[str] = set()
 
     for fpath in files:
-        raw = fpath.read_bytes()
+        try:
+            raw = fpath.read_bytes()
+        except Exception:
+            continue
+
         text_utf8 = raw.decode("utf-8", errors="ignore")
 
-        # ── People, subjects, links (from JSON mention blocks) ──
+        # ── Global extraction: people, subjects, links ──
         all_people.update(_extract_people(text_utf8))
         all_subjects.extend(_extract_subjects(text_utf8))
         all_links.extend(_extract_links(text_utf8))
 
-        # ── Messages keyed by composetime ──
+        # ── Per-message extraction keyed by composetime ──
         for m in re.finditer(
-            rb"composetime.{0,5}(\d{4}-\d{2}-\d{2}T[\d:.]+Z?)", raw
+            rb"composetime.{0,8}(\d{4}-\d{2}-\d{2}T[\d:.]+Z?)", raw
         ):
             ts = m.group(1).decode("ascii")
             if ts[:10] not in date_prefixes:
                 continue
 
-            start = max(0, m.start() - 4000)
-            end = min(len(raw), m.end() + 2000)
+            # Wider extraction window for better content capture
+            start = max(0, m.start() - 6000)
+            end = min(len(raw), m.end() + 4000)
             window_raw = raw[start:end]
-            window_utf8 = text_utf8[max(0, m.start() - 4000): min(len(text_utf8), m.end() + 2000)]
+            window_utf8 = window_raw.decode("utf-8", errors="ignore")
 
-            # Extract senders from JSON mentions
             senders = _extract_people(window_utf8)
-
-            # Extract subjects
             subjects = _extract_subjects(window_utf8)
+            contents = _extract_message_content(window_raw, window_utf8)
 
-            # Extract content from UTF-16LE sections
-            contents = []
-            for u16 in re.finditer(rb"(?:[\x20-\x7e]\x00){12,}", window_raw):
-                try:
-                    decoded = u16.group().decode("utf-16-le").strip()
-                    if (
-                        len(decoded) > 20
-                        and not decoded.startswith("19:")
-                        and not decoded.startswith("8:orgid")
-                        and "@thread" not in decoded
-                        and "schema.skype" not in decoded
-                        and "Microsoft Teams" not in decoded
-                        and re.search(r"[a-zA-Z]{3,}\s+[a-zA-Z]{3,}", decoded)
-                    ):
-                        clean = _clean_html(decoded)
-                        if len(clean) > 20:
-                            contents.append(clean[:400])
-                except Exception:
-                    pass
-
+            # De-duplicate by timestamp + first content fragment
             content_key = contents[0][:80] if contents else ""
             unique_key = f"{ts}|{content_key}"
-            if unique_key in seen_keys or (not contents and not subjects):
+            if unique_key in seen_keys:
+                continue
+            # Accept messages with content OR subjects (not empty)
+            if not contents and not subjects and not senders:
                 continue
             seen_keys.add(unique_key)
 
@@ -216,9 +349,9 @@ def _do_scan(db_dir: Path, days_back: int, result: dict) -> dict:
                 "subject": subjects[0] if subjects else None,
             })
 
-    # De-duplicate subjects and links globally
+    # De-duplicate and finalize
     result["people"] = sorted(all_people)
-    result["subjects"] = list(dict.fromkeys(all_subjects))
+    result["subjects"] = list(dict.fromkeys(all_subjects))[:50]
     result["links"] = list(dict.fromkeys(all_links))[:30]
     result["messages"] = sorted(messages, key=lambda m: m["time"], reverse=True)
     return result
@@ -227,12 +360,18 @@ def _do_scan(db_dir: Path, days_back: int, result: dict) -> dict:
 # ── CLI helper ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import json as _json
+    import sys as _sys
 
-    data = scan()
+    days = int(_sys.argv[1]) if len(_sys.argv) > 1 else 3
+    print(f"Scanning Teams cache (last {days} days)...")
+    data = scan(days_back=days)
     if data["error"]:
         print(f"ERROR: {data['error']}")
     else:
-        print(f"People ({len(data['people'])}): {', '.join(data['people'])}")
-        print(f"Subjects ({len(data['subjects'])}): {data['subjects']}")
+        print(f"People ({len(data['people'])}): {', '.join(data['people'][:20])}")
+        print(f"Subjects ({len(data['subjects'])}): {len(data['subjects'])}")
+        print(f"Links ({len(data['links'])}): {len(data['links'])}")
         print(f"Messages: {len(data['messages'])}")
-        print(_json.dumps(data["messages"][:20], indent=2))
+        for m in data["messages"][:10]:
+            print(f"  [{m['time'][:19]}] {', '.join(m['senders'][:2]) or '?'}: "
+                  f"{(m['content'][0][:100] if m['content'] else m.get('subject', ''))}")

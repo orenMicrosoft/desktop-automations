@@ -19,11 +19,12 @@ sys.path.insert(0, str(BASE_DIR))
 import teams_scanner
 
 _scan_lock = threading.Lock()
+_scanning = False
 _BENIGN = (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError)
 
 
 def _now_iso():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(timezone.utc).astimezone().isoformat()
 
 
 def _load_cached():
@@ -62,9 +63,19 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
 
         if parsed.path == "/api/scan-data":
-            self._serve_json(_load_cached() or {"error": "No scan yet. Click Refresh."})
+            cached = _load_cached()
+            if cached:
+                self._serve_json(cached)
+            else:
+                self._serve_json({
+                    "error": "No scan data yet. Click Refresh to scan.",
+                    "messages": [], "people": [], "subjects": [], "links": [],
+                    "scanned_at": None,
+                })
         elif parsed.path == "/api/status":
-            self._serve_json({"status": "running", "port": PORT})
+            self._serve_json({"status": "running", "port": PORT, "scanning": _scanning})
+        elif parsed.path == "/api/scanning":
+            self._serve_json({"scanning": _scanning})
         else:
             super().do_GET()
 
@@ -89,20 +100,22 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def _trigger_scan(self, days: int):
+        global _scanning
+
         def run():
-            with _scan_lock:
-                data = teams_scanner.scan(days_back=days)
-                _save_cached(data)
+            global _scanning
+            try:
+                _scanning = True
+                with _scan_lock:
+                    data = teams_scanner.scan(days_back=days)
+                    _save_cached(data)
+            finally:
+                _scanning = False
 
         thread = threading.Thread(target=run, daemon=True)
         thread.start()
 
-        body = json.dumps({"status": "scanning", "days": days}).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", len(body))
-        self.end_headers()
-        self.wfile.write(body)
+        self._serve_json({"status": "scanning", "days": days})
 
 
 def main():
