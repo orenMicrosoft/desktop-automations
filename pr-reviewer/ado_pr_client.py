@@ -47,7 +47,14 @@ def _api(method, url, body=None, timeout=30):
     req.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read())
+            raw = resp.read()
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                raise RuntimeError(
+                    f"ADO API returned non-JSON on {method} {url}: "
+                    f"{raw[:200].decode('utf-8', errors='replace')}"
+                )
     except urllib.error.HTTPError as e:
         resp_body = e.read().decode() if e.fp else ""
         raise RuntimeError(f"ADO API {e.code} on {method} {url}: {resp_body[:300]}")
@@ -150,32 +157,9 @@ def _change_type_name(ct):
     return ", ".join(names) if names else "unknown"
 
 
-def get_file_diff(org, project, repo_id, pr_id, file_path):
-    """Fetch the text diff for a single file in a PR.
-
-    Uses the diff endpoint to get unified diff content.
-    """
-    iterations = get_pr_iterations(org, project, repo_id, pr_id)
-    if not iterations:
-        return ""
-    last_iter = iterations[-1]["id"]
-
-    # Get the file content from the PR diff
-    encoded_path = urllib.parse.quote(file_path, safe="")
-    url = (f"{org}/{project}/_apis/git/repositories/{repo_id}"
-           f"/diffs/commits?baseVersionType=commit"
-           f"&targetVersionType=commit"
-           f"&api-version=7.1")
-
-    # Alternative: use the iterations diff for the file
-    # We'll use the PR's source and target to get a proper diff
-    pr_url = (f"{org}/{project}/_apis/git/repositories/{repo_id}"
-              f"/pullRequests/{pr_id}?api-version=7.1")
-    pr = _api_get(pr_url)
-
-    source_commit = pr.get("lastMergeSourceCommit", {}).get("commitId", "")
-    target_commit = pr.get("lastMergeTargetCommit", {}).get("commitId", "")
-
+def get_file_diff(org, project, repo_id, file_path,
+                  source_commit, target_commit):
+    """Fetch the text diff for a single file given source/target commits."""
     if not source_commit or not target_commit:
         return ""
 
@@ -221,7 +205,20 @@ def _make_unified_diff(old_content, new_content, file_path):
 
 
 def get_all_diffs(org, project, repo_id, pr_id, changed_files):
-    """Fetch diffs for all changed files (non-delete, source files only)."""
+    """Fetch diffs for all changed files (non-delete, source files only).
+
+    Pre-fetches PR commit info once to avoid redundant API calls.
+    """
+    # Fetch source/target commits once
+    pr_url = (f"{org}/{project}/_apis/git/repositories/{repo_id}"
+              f"/pullRequests/{pr_id}?api-version=7.1")
+    pr = _api_get(pr_url)
+    source_commit = pr.get("lastMergeSourceCommit", {}).get("commitId", "")
+    target_commit = pr.get("lastMergeTargetCommit", {}).get("commitId", "")
+
+    if not source_commit or not target_commit:
+        return {}
+
     diffs = {}
     for f in changed_files:
         path = f["path"]
@@ -231,7 +228,8 @@ def get_all_diffs(org, project, repo_id, pr_id, changed_files):
         if any(path.endswith(ext) for ext in [".png", ".jpg", ".gif", ".ico", ".woff", ".woff2"]):
             continue
         try:
-            diff = get_file_diff(org, project, repo_id, pr_id, path)
+            diff = get_file_diff(org, project, repo_id, path,
+                                 source_commit, target_commit)
             if diff:
                 diffs[path] = diff
         except Exception as e:
