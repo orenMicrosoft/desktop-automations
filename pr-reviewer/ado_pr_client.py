@@ -73,20 +73,39 @@ def parse_pr_url(url):
 
     Supports:
       https://dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{id}
+      https://{org}.visualstudio.com/{project}/_git/{repo}/pullrequest/{id}
     """
+    clean = url.split('?')[0]
+
+    # Format 1: dev.azure.com
     m = re.match(
         r'https://dev\.azure\.com/([^/]+)/([^/]+)/_git/([^/]+)/pullrequest/(\d+)',
-        url.split('?')[0]
+        clean
     )
-    if not m:
-        raise ValueError(f"Could not parse PR URL: {url}")
-    org, project, repo_name, pr_id = m.groups()
-    return {
-        "org": f"https://dev.azure.com/{org}",
-        "project": project,
-        "repo_name": repo_name,
-        "pr_id": int(pr_id),
-    }
+    if m:
+        org, project, repo_name, pr_id = m.groups()
+        return {
+            "org": f"https://dev.azure.com/{org}",
+            "project": project,
+            "repo_name": repo_name,
+            "pr_id": int(pr_id),
+        }
+
+    # Format 2: {org}.visualstudio.com
+    m = re.match(
+        r'https://([^.]+)\.visualstudio\.com/([^/]+)/_git/([^/]+)/pullrequest/(\d+)',
+        clean
+    )
+    if m:
+        org, project, repo_name, pr_id = m.groups()
+        return {
+            "org": f"https://{org}.visualstudio.com",
+            "project": project,
+            "repo_name": repo_name,
+            "pr_id": int(pr_id),
+        }
+
+    raise ValueError(f"Could not parse PR URL: {url}")
 
 
 def get_pr_info(org, project, repo_name, pr_id):
