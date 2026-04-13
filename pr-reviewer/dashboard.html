@@ -788,9 +788,23 @@ async function commitFixes() {
     reviewData.staged_fixes = {};
     renderComments(reviewData.comments);
     renderStagedFixes({});
-    toast(`Committed! ${result.files_pushed} file(s) pushed`, 'success');
+    toast(`Committed! ${result.files_pushed} file(s) pushed — re-reviewing…`, 'success');
   } catch (e) {
     toast(e.message, 'error');
+    hideLoading();
+    return;
+  }
+
+  // Auto re-review after commit
+  try {
+    document.getElementById('loadingText').textContent = 'Re-reviewing updated PR…';
+    const review = await api('POST', '/api/generate-review');
+    reviewData.comments = review.comments;
+    renderComments(review.comments);
+    loadHistory();
+    toast(`Re-review: ${review.comments.length} comments`, 'success');
+  } catch (e) {
+    toast(`Committed, but re-review failed: ${e.message}`, 'error');
   } finally {
     hideLoading();
   }

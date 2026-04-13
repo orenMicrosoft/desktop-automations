@@ -259,7 +259,7 @@ def get_all_diffs(org, project, repo_id, pr_id, changed_files):
 
 def get_current_user(org):
     """Get the authenticated user's display name and ID."""
-    url = f"{org}/_apis/connectionData?api-version=7.1"
+    url = f"{org}/_apis/connectionData?api-version=7.1-preview"
     data = _api_get(url)
     user = data.get("authenticatedUser", {})
     return {
