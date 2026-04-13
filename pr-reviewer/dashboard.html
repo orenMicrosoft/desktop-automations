@@ -661,7 +661,7 @@ function renderComments(comments) {
       <td><span class="file-path" title="${esc(c.file)}">${shortPath(c.file)}</span></td>
       <td><span class="line-num">${c.line || '—'}</span></td>
       <td class="comment-cell">
-        <textarea class="comment-text" rows="3"
+        <textarea class="comment-text" rows="4"
           onchange="updateComment(${c.id}, 'comment', this.value)"
           ${c.posted ? 'disabled' : ''}>${esc(c.comment)}</textarea>
       </td>
@@ -673,7 +673,11 @@ function renderComments(comments) {
     </tr>`;
   }).join('');
 
-  requestAnimationFrame(autoResizeTextareas);
+  // Double-pass resize: first after DOM insert, then after layout
+  requestAnimationFrame(() => {
+    autoResizeTextareas();
+    setTimeout(autoResizeTextareas, 50);
+  });
 }
 
 function esc(s) {
@@ -958,8 +962,9 @@ async function resetPrompt() {
 // ── Auto-resize comment textareas ──
 function autoResizeTextareas() {
   document.querySelectorAll('.comment-text').forEach(ta => {
-    ta.style.height = 'auto';
-    ta.style.height = ta.scrollHeight + 2 + 'px';
+    ta.style.height = '0';
+    const h = Math.max(ta.scrollHeight, 80);
+    ta.style.height = h + 2 + 'px';
   });
 }
 

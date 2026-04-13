@@ -196,7 +196,7 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
         is_author = False
         try:
             me = ado_pr_client.get_current_user(org)
-            is_author = me.get("id") == pr_info.get("author_id", "")
+            is_author = me.get("id", "") == pr_info.get("author_id", "")
         except Exception:
             pass
 
