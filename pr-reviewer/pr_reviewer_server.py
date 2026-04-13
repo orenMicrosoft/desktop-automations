@@ -542,13 +542,8 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
         except Exception:
             pass
 
-        source_files = [f for f in changed_files
-                        if not any(f["path"].endswith(ext)
-                                   for ext in [".json", ".png", ".jpg", ".gif",
-                                               ".ico", ".woff", ".woff2"])]
-        diffs = ado_pr_client.get_all_diffs(
-            parsed["org"], parsed["project"],
-            pr_info["repo_id"], pr_info["pr_id"], source_files)
+        # Skip expensive per-file diff fetching — diffs are only needed
+        # for AI review generation, which we don't re-run on restore.
 
         comments = []
         for i, c in enumerate(entry.get("comments", [])):
@@ -566,14 +561,14 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
         with _review_lock:
             _current_review["pr_info"] = pr_info
             _current_review["changed_files"] = changed_files
-            _current_review["diffs"] = diffs
+            _current_review["diffs"] = {}
             _current_review["comments"] = comments
             _current_review["is_author"] = is_author
             _current_review["staged_fixes"] = {}
 
         self._json({"ok": True, "pr_info": pr_info,
                      "files_count": len(changed_files),
-                     "diffs_count": len(diffs),
+                     "diffs_count": 0,
                      "is_author": is_author,
                      "comments": comments})
 
