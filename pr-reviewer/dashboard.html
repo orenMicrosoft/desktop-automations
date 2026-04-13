@@ -135,7 +135,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .comment-text {
   background: transparent; border: 1px solid transparent; border-radius: 4px;
   color: var(--text); padding: 4px 6px; width: 100%; resize: vertical;
-  min-height: 36px; overflow: hidden; font-family: inherit; font-size: .88rem;
+  min-height: 60px; overflow-y: auto; font-family: inherit; font-size: .88rem;
   transition: border-color .15s;
 }
 .comment-text:hover { border-color: var(--surface1); }
@@ -661,7 +661,7 @@ function renderComments(comments) {
       <td><span class="file-path" title="${esc(c.file)}">${shortPath(c.file)}</span></td>
       <td><span class="line-num">${c.line || '—'}</span></td>
       <td class="comment-cell">
-        <textarea class="comment-text" rows="2"
+        <textarea class="comment-text" rows="3"
           onchange="updateComment(${c.id}, 'comment', this.value)"
           ${c.posted ? 'disabled' : ''}>${esc(c.comment)}</textarea>
       </td>
