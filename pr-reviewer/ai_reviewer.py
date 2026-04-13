@@ -43,7 +43,7 @@ def _find_copilot_exe():
 
 COPILOT_EXE = _find_copilot_exe()
 
-REVIEW_PROMPT_TEMPLATE = """You are reviewing a pull request. Produce a JSON array of review comments.
+_DEFAULT_PROMPT_TEMPLATE = """You are reviewing a pull request. Produce a JSON array of review comments.
 
 STYLE RULES:
 - Each comment must be a **friendly question** — concise, simple, no lecturing.
@@ -75,6 +75,14 @@ Files changed ({file_count}):
 {diff_text}
 
 IMPORTANT: Return ONLY the JSON array. No explanation, no markdown fences."""
+
+# Load user-customized prompt if saved, otherwise use default
+_SAVED_PROMPT_FILE = os.path.join(DIR, "review_prompt.txt")
+if os.path.isfile(_SAVED_PROMPT_FILE):
+    with open(_SAVED_PROMPT_FILE, "r", encoding="utf-8") as _f:
+        REVIEW_PROMPT_TEMPLATE = _f.read()
+else:
+    REVIEW_PROMPT_TEMPLATE = _DEFAULT_PROMPT_TEMPLATE
 
 
 def _load_config():

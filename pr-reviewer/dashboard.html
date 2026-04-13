@@ -135,7 +135,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .comment-text {
   background: transparent; border: 1px solid transparent; border-radius: 4px;
   color: var(--text); padding: 4px 6px; width: 100%; resize: vertical;
-  min-height: 36px; font-family: inherit; font-size: .88rem;
+  min-height: 36px; overflow: hidden; font-family: inherit; font-size: .88rem;
   transition: border-color .15s;
 }
 .comment-text:hover { border-color: var(--surface1); }
@@ -205,6 +205,110 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .add-form textarea { resize: vertical; min-height: 48px; }
 .add-form label { font-size: .8rem; color: var(--muted); margin-bottom: 2px; }
 .add-form .field { display: flex; flex-direction: column; flex: 1; }
+
+/* ═══════════ Prompt Editor ═══════════ */
+.prompt-section {
+  background: var(--surface); border-radius: 8px;
+  border: 1px solid var(--surface1); overflow: hidden;
+}
+.prompt-header {
+  padding: 10px 16px; display: flex; align-items: center; gap: 10px;
+  cursor: pointer; user-select: none;
+  background: var(--mantle); border-bottom: 1px solid var(--surface1);
+}
+.prompt-header:hover { background: var(--surface); }
+.prompt-header .chevron {
+  transition: transform .2s; font-size: .75rem; color: var(--muted);
+}
+.prompt-header .chevron.open { transform: rotate(90deg); }
+.prompt-header h3 { font-size: .9rem; font-weight: 600; color: var(--subtext); }
+.prompt-body { display: none; padding: 12px 16px; flex-direction: column; gap: 10px; }
+.prompt-body.open { display: flex; }
+.prompt-textarea {
+  width: 100%; min-height: 200px; max-height: 60vh; resize: vertical;
+  background: var(--mantle); border: 1px solid var(--surface1); border-radius: 6px;
+  padding: 10px 14px; color: var(--text); outline: none;
+  font-family: 'Cascadia Code', Consolas, monospace; font-size: .82rem;
+  line-height: 1.5; tab-size: 2;
+}
+.prompt-textarea:focus { border-color: var(--blue); }
+.prompt-actions { display: flex; gap: 8px; align-items: center; }
+.prompt-hint { font-size: .78rem; color: var(--muted); margin-left: auto; }
+
+/* ═══════════ Review History ═══════════ */
+.history-section {
+  background: var(--surface); border-radius: 8px;
+  border: 1px solid var(--surface1); overflow: hidden;
+}
+.history-header {
+  padding: 10px 16px; display: flex; align-items: center; gap: 10px;
+  cursor: pointer; user-select: none;
+  background: var(--mantle); border-bottom: 1px solid var(--surface1);
+}
+.history-header:hover { background: var(--surface); }
+.history-header .chevron {
+  transition: transform .2s; font-size: .75rem; color: var(--muted);
+}
+.history-header .chevron.open { transform: rotate(90deg); }
+.history-header h3 { font-size: .9rem; font-weight: 600; color: var(--subtext); }
+.history-header .history-count {
+  font-size: .75rem; padding: 2px 8px; border-radius: 10px;
+  background: var(--surface1); color: var(--muted); margin-left: 4px;
+}
+.history-body { display: none; padding: 0; flex-direction: column; }
+.history-body.open { display: flex; }
+.history-empty { padding: 20px; text-align: center; color: var(--muted); font-size: .85rem; }
+
+.history-entry {
+  border-bottom: 1px solid var(--surface1); overflow: hidden;
+}
+.history-entry:last-child { border-bottom: none; }
+.history-entry-header {
+  padding: 10px 16px; display: flex; align-items: center; gap: 12px;
+  cursor: pointer; user-select: none; transition: background .1s;
+}
+.history-entry-header:hover { background: rgba(137, 180, 250, .05); }
+.history-entry-header .chevron {
+  transition: transform .2s; font-size: .65rem; color: var(--muted);
+  flex-shrink: 0;
+}
+.history-entry-header .chevron.open { transform: rotate(90deg); }
+.history-entry-title {
+  font-size: .88rem; font-weight: 500; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;
+}
+.history-entry-meta {
+  display: flex; gap: 10px; align-items: center; flex-shrink: 0;
+  font-size: .75rem; color: var(--muted);
+}
+.history-entry-meta .sev-count {
+  padding: 1px 6px; border-radius: 8px; font-size: .7rem; font-weight: 600;
+}
+.history-entry-meta .sev-count.critical { background: var(--red); color: var(--crust); }
+.history-entry-meta .sev-count.medium { background: var(--yellow); color: var(--crust); }
+.history-entry-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.history-entry-actions button {
+  padding: 2px 8px; border-radius: 4px; font-size: .72rem;
+}
+.history-entry-body {
+  display: none; padding: 0 16px 12px 16px; flex-direction: column; gap: 6px;
+}
+.history-entry-body.open { display: flex; }
+.history-entry-branch {
+  font-size: .78rem; color: var(--muted); font-family: 'Cascadia Code', Consolas, monospace;
+  margin-bottom: 4px;
+}
+.history-comment-row {
+  display: flex; gap: 10px; align-items: flex-start; padding: 6px 0;
+  border-bottom: 1px solid rgba(69, 71, 90, .4); font-size: .82rem;
+}
+.history-comment-row:last-child { border-bottom: none; }
+.history-comment-file {
+  color: var(--blue); font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: .75rem; flex-shrink: 0; max-width: 180px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.history-comment-text { color: var(--text); flex: 1; }
 </style>
 </head>
 <body>
@@ -280,6 +384,22 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
     </div>
   </div>
 
+  <!-- Prompt Editor (collapsible) -->
+  <div class="prompt-section">
+    <div class="prompt-header" onclick="togglePromptEditor()">
+      <span class="chevron" id="promptChevron">▶</span>
+      <h3>⚙️ Review Prompt Template</h3>
+    </div>
+    <div class="prompt-body" id="promptBody">
+      <textarea class="prompt-textarea" id="promptTextarea" spellcheck="false"></textarea>
+      <div class="prompt-actions">
+        <button class="btn btn-primary" onclick="savePrompt()">💾 Save Prompt</button>
+        <button class="btn btn-outline" onclick="resetPrompt()">↺ Reset to Default</button>
+        <span class="prompt-hint">Placeholders: {learnings} {title} {author} {source_branch} {target_branch} {file_count} {diff_text}</span>
+      </div>
+    </div>
+  </div>
+
   <!-- Comments Table -->
   <div id="commentsSection" class="comments-section">
     <table class="comments-table">
@@ -302,6 +422,16 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
   <div id="emptyState" class="empty-state">
     <h3>No PR loaded</h3>
     <p>Paste a PR URL above and click "Load PR" to get started.</p>
+  </div>
+
+  <!-- Review History (collapsible) -->
+  <div class="history-section">
+    <div class="history-header" onclick="toggleHistory()">
+      <span class="chevron" id="historyChevron">▶</span>
+      <h3>📋 Review History</h3>
+      <span class="history-count" id="historyCount">0</span>
+    </div>
+    <div class="history-body" id="historyBody"></div>
   </div>
 </div>
 
@@ -390,6 +520,7 @@ async function generateReview() {
     const result = await api('POST', '/api/generate-review');
     reviewData.comments = result.comments;
     renderComments(result.comments);
+    loadHistory();
     toast(`Generated ${result.comments.length} comments`, 'success');
   } catch (e) {
     toast(e.message, 'error');
@@ -561,8 +692,157 @@ document.getElementById('prUrl').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') loadPR();
 });
 
+// ── Prompt Editor ──
+let _defaultPrompt = '';
+
+async function loadPrompt() {
+  try {
+    const data = await api('GET', '/api/prompt');
+    document.getElementById('promptTextarea').value = data.prompt;
+    _defaultPrompt = data.prompt;
+  } catch (e) {
+    console.error('Failed to load prompt:', e);
+  }
+}
+
+function togglePromptEditor() {
+  const body = document.getElementById('promptBody');
+  const chevron = document.getElementById('promptChevron');
+  body.classList.toggle('open');
+  chevron.classList.toggle('open');
+}
+
+async function savePrompt() {
+  const prompt = document.getElementById('promptTextarea').value;
+  try {
+    await api('PUT', '/api/prompt', { prompt });
+    toast('Prompt saved', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function resetPrompt() {
+  if (!_defaultPrompt) return;
+  document.getElementById('promptTextarea').value = _defaultPrompt;
+  try {
+    await api('PUT', '/api/prompt', { prompt: _defaultPrompt });
+    toast('Prompt reset to default', 'info');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// ── Auto-resize comment textareas ──
+function autoResizeTextareas() {
+  document.querySelectorAll('.comment-text').forEach(ta => {
+    ta.style.height = 'auto';
+    ta.style.height = ta.scrollHeight + 2 + 'px';
+  });
+}
+
+// Re-run after render
+const _origRender = renderComments;
+renderComments = function(comments) {
+  _origRender(comments);
+  requestAnimationFrame(autoResizeTextareas);
+};
+
+// ── Review History ──
+let _historyData = [];
+
+function toggleHistory() {
+  const body = document.getElementById('historyBody');
+  const chevron = document.getElementById('historyChevron');
+  body.classList.toggle('open');
+  chevron.classList.toggle('open');
+}
+
+async function loadHistory() {
+  try {
+    _historyData = await api('GET', '/api/history');
+    document.getElementById('historyCount').textContent = _historyData.length;
+    renderHistory();
+  } catch (e) {
+    console.error('Failed to load history:', e);
+  }
+}
+
+function renderHistory() {
+  const body = document.getElementById('historyBody');
+  if (!_historyData.length) {
+    body.innerHTML = '<div class="history-empty">No past reviews yet. Generate a review to start building history.</div>';
+    return;
+  }
+
+  body.innerHTML = _historyData.map(entry => {
+    const date = new Date(entry.timestamp);
+    const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const comments = entry.comments || [];
+    const critCount = comments.filter(c => c.severity === 'critical').length;
+    const medCount = comments.filter(c => c.severity === 'medium').length;
+
+    const commentsHtml = comments.map(c => `
+      <div class="history-comment-row">
+        <span class="sev-badge sev-${c.severity}" style="font-size:.65rem;padding:1px 6px;">${c.severity}</span>
+        <span class="history-comment-file" title="${esc(c.file)}">${shortPath(c.file)}</span>
+        <span class="line-num" style="font-size:.75rem;">${c.line || '—'}</span>
+        <span class="history-comment-text">${esc(c.comment)}</span>
+      </div>
+    `).join('');
+
+    return `
+      <div class="history-entry" data-hid="${entry.id}">
+        <div class="history-entry-header" onclick="toggleHistoryEntry('${entry.id}')">
+          <span class="chevron" id="hchev-${entry.id}">▶</span>
+          <span class="history-entry-title">${esc(entry.pr_title)}</span>
+          <div class="history-entry-meta">
+            ${critCount ? `<span class="sev-count critical">${critCount} critical</span>` : ''}
+            ${medCount ? `<span class="sev-count medium">${medCount} medium</span>` : ''}
+            <span>${comments.length} comments</span>
+            <span>👤 ${esc(entry.pr_author)}</span>
+            <span>${dateStr} ${timeStr}</span>
+          </div>
+          <div class="history-entry-actions">
+            <a href="${esc(entry.pr_url)}" target="_blank" class="btn btn-outline" style="font-size:.72rem;padding:2px 8px;"
+               onclick="event.stopPropagation()">Open PR ↗</a>
+            <button class="btn btn-outline" style="font-size:.72rem;padding:2px 8px;border-color:var(--red);color:var(--red);"
+                    onclick="event.stopPropagation();deleteHistory('${entry.id}')">✕</button>
+          </div>
+        </div>
+        <div class="history-entry-body" id="hbody-${entry.id}">
+          <div class="history-entry-branch">🔀 ${esc(entry.source_branch)} → ${esc(entry.target_branch)}</div>
+          ${commentsHtml}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleHistoryEntry(id) {
+  const body = document.getElementById('hbody-' + id);
+  const chevron = document.getElementById('hchev-' + id);
+  body.classList.toggle('open');
+  chevron.classList.toggle('open');
+}
+
+async function deleteHistory(id) {
+  try {
+    await api('DELETE', '/api/history/' + id);
+    _historyData = _historyData.filter(h => h.id !== id);
+    document.getElementById('historyCount').textContent = _historyData.length;
+    renderHistory();
+    toast('History entry removed', 'info');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
 // ── Init ──
 checkAI();
+loadPrompt();
+loadHistory();
 </script>
 </body>
 </html>

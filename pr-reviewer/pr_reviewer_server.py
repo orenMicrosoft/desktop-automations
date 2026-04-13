@@ -19,6 +19,19 @@ import ai_reviewer
 
 PORT = 8097
 LEARNINGS_FILE = os.path.join(DIR, "learnings.json")
+HISTORY_FILE = os.path.join(DIR, "review_history.json")
+
+
+def _load_history():
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+
+def _save_history(history):
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, indent=2, default=str)
 
 _BENIGN = (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError)
 
@@ -88,6 +101,10 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
             })
         elif self.path == "/api/learnings":
             self._json(ai_reviewer._load_learnings())
+        elif self.path == "/api/prompt":
+            self._json({"prompt": ai_reviewer.REVIEW_PROMPT_TEMPLATE})
+        elif self.path == "/api/history":
+            self._json(_load_history())
         else:
             super().do_GET()
 
@@ -114,6 +131,8 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
         try:
             if self.path.startswith("/api/comment/"):
                 self._handle_update_comment()
+            elif self.path == "/api/prompt":
+                self._handle_update_prompt()
             else:
                 self.send_error(404)
         except Exception as e:
@@ -123,6 +142,8 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
         try:
             if self.path.startswith("/api/comment/"):
                 self._handle_delete_comment()
+            elif self.path.startswith("/api/history/"):
+                self._handle_delete_history()
             else:
                 self.send_error(404)
         except Exception as e:
@@ -178,6 +199,9 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
 
         with _review_lock:
             _current_review["comments"] = comments
+
+        # Auto-save to history
+        self._save_to_history(pr_info, comments)
 
         self._json({"ok": True, "comments": comments})
 
@@ -305,6 +329,52 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
         if not text:
             return self._error("Missing learning text")
         ai_reviewer.save_learning(text)
+        self._json({"ok": True})
+
+    def _handle_update_prompt(self):
+        body = self._read_body()
+        prompt = body.get("prompt", "")
+        if not prompt:
+            return self._error("Missing prompt text")
+        ai_reviewer.REVIEW_PROMPT_TEMPLATE = prompt
+        # Persist to disk so it survives restarts
+        prompt_file = os.path.join(DIR, "review_prompt.txt")
+        with open(prompt_file, "w", encoding="utf-8") as f:
+            f.write(prompt)
+        self._json({"ok": True})
+
+    def _save_to_history(self, pr_info, comments):
+        import datetime
+        history = _load_history()
+        entry = {
+            "id": datetime.datetime.now().strftime("%Y%m%d_%H%M%S"),
+            "timestamp": datetime.datetime.now().isoformat(),
+            "pr_title": pr_info.get("title", ""),
+            "pr_author": pr_info.get("author", ""),
+            "pr_url": pr_info.get("url", ""),
+            "pr_id": pr_info.get("pr_id", ""),
+            "source_branch": pr_info.get("source_branch", ""),
+            "target_branch": pr_info.get("target_branch", ""),
+            "comments": [
+                {
+                    "severity": c.get("severity", ""),
+                    "file": c.get("file", ""),
+                    "line": c.get("line", 0),
+                    "comment": c.get("comment", ""),
+                    "issue": c.get("issue", ""),
+                    "suggestion": c.get("suggestion", ""),
+                }
+                for c in comments
+            ],
+        }
+        history.insert(0, entry)  # newest first
+        _save_history(history)
+
+    def _handle_delete_history(self):
+        entry_id = self.path.split("/api/history/")[1]
+        history = _load_history()
+        history = [h for h in history if h.get("id") != entry_id]
+        _save_history(history)
         self._json({"ok": True})
 
 
