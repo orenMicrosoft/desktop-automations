@@ -1,6 +1,7 @@
 """
 PR Reviewer Dashboard Server
 Review PRs with AI-powered comments, edit inline, post to ADO.
+Git-style auto-fix: stage fixes per comment, then commit all to the PR branch.
 """
 import http.server
 import json
@@ -10,6 +11,7 @@ import threading
 import socket
 import webbrowser
 import urllib.parse
+import difflib
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, DIR)
@@ -41,8 +43,20 @@ _current_review = {
     "changed_files": [],
     "diffs": {},
     "comments": [],
+    "is_author": False,
+    "staged_fixes": {},  # comment_id (str) -> {path, original, fixed, diff_preview}
 }
 _review_lock = threading.Lock()
+
+
+def _make_diff_preview(original, fixed, file_path):
+    """Create a unified diff preview between original and fixed content."""
+    old_lines = original.splitlines(keepends=True)
+    new_lines = fixed.splitlines(keepends=True)
+    diff = difflib.unified_diff(old_lines, new_lines,
+                                fromfile=f"a/{file_path}",
+                                tofile=f"b/{file_path}", lineterm="")
+    return "".join(diff)
 
 
 class QuietServer(http.server.ThreadingHTTPServer):
@@ -91,7 +105,12 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
             self._json({"status": "ok"})
         elif self.path == "/api/review":
             with _review_lock:
-                self._json(_current_review)
+                data = dict(_current_review)
+                data["staged_fixes"] = {
+                    str(k): {"path": v["path"], "diff_preview": v["diff_preview"]}
+                    for k, v in _current_review["staged_fixes"].items()
+                }
+                self._json(data)
         elif self.path == "/api/ai-status":
             self._json({
                 "configured": ai_reviewer.is_ai_configured(),
@@ -122,6 +141,14 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
                 self._handle_add_comment()
             elif self.path == "/api/save-learning":
                 self._handle_save_learning()
+            elif self.path == "/api/auto-fix":
+                self._handle_auto_fix()
+            elif self.path == "/api/unstage-fix":
+                self._handle_unstage_fix()
+            elif self.path == "/api/commit-fixes":
+                self._handle_commit_fixes()
+            elif self.path == "/api/restore-history":
+                self._handle_restore_history()
             else:
                 self.send_error(404)
         except Exception as e:
@@ -149,6 +176,7 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             self._error(str(e), 500)
 
+    # ── Load PR (+ detect author) ──
     def _handle_load_pr(self):
         body = self._read_body()
         pr_url = body.get("url", "").strip()
@@ -164,7 +192,15 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
         pr_info = ado_pr_client.get_pr_info(org, project, repo_name, pr_id)
         changed_files = ado_pr_client.get_pr_changes(org, project, pr_info["repo_id"], pr_id)
 
-        # Fetch diffs for source files only (skip large JSON mocks, images)
+        # Detect if current user is the PR author
+        is_author = False
+        try:
+            me = ado_pr_client.get_current_user(org)
+            is_author = me.get("id") == pr_info.get("author_id", "")
+        except Exception:
+            pass
+
+        # Fetch diffs for source files only
         source_files = [f for f in changed_files
                         if not any(f["path"].endswith(ext)
                                    for ext in [".json", ".png", ".jpg", ".gif",
@@ -177,11 +213,15 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
             _current_review["changed_files"] = changed_files
             _current_review["diffs"] = diffs
             _current_review["comments"] = []
+            _current_review["is_author"] = is_author
+            _current_review["staged_fixes"] = {}
 
         self._json({"ok": True, "pr_info": pr_info,
                      "files_count": len(changed_files),
-                     "diffs_count": len(diffs)})
+                     "diffs_count": len(diffs),
+                     "is_author": is_author})
 
+    # ── Generate AI Review ──
     def _handle_generate_review(self):
         with _review_lock:
             pr_info = _current_review.get("pr_info")
@@ -192,7 +232,6 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
 
         comments = ai_reviewer.generate_review(pr_info, diffs)
 
-        # Assign IDs
         for i, c in enumerate(comments):
             c["id"] = i
             c["posted"] = False
@@ -200,11 +239,10 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
         with _review_lock:
             _current_review["comments"] = comments
 
-        # Auto-save to history
         self._save_to_history(pr_info, comments)
-
         self._json({"ok": True, "comments": comments})
 
+    # ── Add comment ──
     def _handle_add_comment(self):
         body = self._read_body()
         with _review_lock:
@@ -224,6 +262,7 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
             _current_review["comments"] = comments
         self._json({"ok": True, "comment": comment})
 
+    # ── Update comment ──
     def _handle_update_comment(self):
         idx = int(self.path.split("/api/comment/")[1])
         body = self._read_body()
@@ -231,15 +270,13 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
             comments = _current_review.get("comments", [])
             for c in comments:
                 if c["id"] == idx:
-                    # Track correction as a learning
                     old_comment = c.get("comment", "")
                     new_comment = body.get("comment", old_comment)
                     if old_comment != new_comment and old_comment:
-                        learning = (f"Changed comment from \"{old_comment}\" "
-                                    f"to \"{new_comment}\" "
+                        learning = (f'Changed comment from "{old_comment}" '
+                                    f'to "{new_comment}" '
                                     f"(file: {c.get('file', '?')})")
                         ai_reviewer.save_learning(learning)
-
                     for key in ["severity", "file", "line", "comment",
                                 "issue", "suggestion"]:
                         if key in body:
@@ -248,20 +285,22 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
                     return
         self._error("Comment not found", 404)
 
+    # ── Delete comment ──
     def _handle_delete_comment(self):
         idx = int(self.path.split("/api/comment/")[1])
         with _review_lock:
             comments = _current_review.get("comments", [])
-            original_len = len(comments)
             deleted = [c for c in comments if c["id"] == idx]
             _current_review["comments"] = [c for c in comments if c["id"] != idx]
+            _current_review["staged_fixes"].pop(str(idx), None)
             if deleted:
-                learning = (f"Deleted comment: \"{deleted[0].get('comment', '')}\" "
-                            f"(file: {deleted[0].get('file', '?')}) — "
+                learning = (f'Deleted comment: "{deleted[0].get("comment", "")}" '
+                            f"(file: {deleted[0].get('file', '?')}) --- "
                             f"this type of comment is not useful")
                 ai_reviewer.save_learning(learning)
         self._json({"ok": True, "deleted": len(deleted) > 0})
 
+    # ── Post single comment to ADO ──
     def _handle_post_comment(self):
         body = self._read_body()
         comment_id = body.get("id")
@@ -276,10 +315,7 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
         if not comment:
             return self._error("Comment not found")
 
-        org = pr_info["url"].split("/_git/")[0].rsplit("/", 1)[0]
-        # Re-parse from the stored URL
         parsed = ado_pr_client.parse_pr_url(pr_info["url"])
-
         ado_pr_client.post_pr_comment(
             parsed["org"], parsed["project"],
             pr_info["repo_id"], pr_info["pr_id"],
@@ -290,9 +326,9 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
 
         with _review_lock:
             comment["posted"] = True
-
         self._json({"ok": True})
 
+    # ── Post all comments to ADO ──
     def _handle_post_all_comments(self):
         with _review_lock:
             pr_info = _current_review.get("pr_info")
@@ -323,6 +359,7 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
 
         self._json({"ok": True, "posted": posted, "errors": errors})
 
+    # ── Save learning ──
     def _handle_save_learning(self):
         body = self._read_body()
         text = body.get("text", "").strip()
@@ -331,17 +368,118 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
         ai_reviewer.save_learning(text)
         self._json({"ok": True})
 
+    # ── Update prompt ──
     def _handle_update_prompt(self):
         body = self._read_body()
         prompt = body.get("prompt", "")
         if not prompt:
             return self._error("Missing prompt text")
         ai_reviewer.REVIEW_PROMPT_TEMPLATE = prompt
-        # Persist to disk so it survives restarts
         prompt_file = os.path.join(DIR, "review_prompt.txt")
         with open(prompt_file, "w", encoding="utf-8") as f:
             f.write(prompt)
         self._json({"ok": True})
+
+    # ═══════ Auto-Fix (git-style staging) ═══════
+
+    def _handle_auto_fix(self):
+        """Generate a fix for one comment -> stage it (like git add)."""
+        body = self._read_body()
+        comment_id = body.get("id")
+
+        with _review_lock:
+            pr_info = _current_review.get("pr_info")
+            comments = _current_review.get("comments", [])
+            is_author = _current_review.get("is_author", False)
+
+        if not pr_info:
+            return self._error("No PR loaded")
+        if not is_author:
+            return self._error("Auto-fix is only available on your own PRs")
+
+        comment = next((c for c in comments if c["id"] == comment_id), None)
+        if not comment:
+            return self._error("Comment not found")
+
+        file_path = comment.get("file", "")
+        if not file_path:
+            return self._error("Comment has no file path")
+
+        parsed = ado_pr_client.parse_pr_url(pr_info["url"])
+        try:
+            original = ado_pr_client.get_file_at_branch(
+                parsed["org"], parsed["project"],
+                pr_info["repo_id"], file_path,
+                pr_info["source_branch"])
+        except Exception as e:
+            return self._error(f"Could not fetch file: {e}")
+
+        result = ai_reviewer.generate_fix(original, file_path, comment)
+        if not result.get("ok"):
+            return self._error(result.get("error", "Fix generation failed"))
+
+        fixed = result["fixed_content"]
+        diff_preview = _make_diff_preview(original, fixed, file_path)
+
+        with _review_lock:
+            _current_review["staged_fixes"][str(comment_id)] = {
+                "path": file_path,
+                "original": original,
+                "fixed": fixed,
+                "diff_preview": diff_preview,
+            }
+
+        self._json({"ok": True, "diff_preview": diff_preview,
+                     "staged_count": len(_current_review["staged_fixes"])})
+
+    def _handle_unstage_fix(self):
+        """Remove a staged fix (like git reset)."""
+        body = self._read_body()
+        comment_id = str(body.get("id", ""))
+        with _review_lock:
+            removed = _current_review["staged_fixes"].pop(comment_id, None)
+        self._json({"ok": True, "unstaged": removed is not None,
+                     "staged_count": len(_current_review["staged_fixes"])})
+
+    def _handle_commit_fixes(self):
+        """Push all staged fixes as one commit to the PR source branch."""
+        with _review_lock:
+            pr_info = _current_review.get("pr_info")
+            staged = dict(_current_review.get("staged_fixes", {}))
+            is_author = _current_review.get("is_author", False)
+
+        if not pr_info:
+            return self._error("No PR loaded")
+        if not is_author:
+            return self._error("Can only commit fixes on your own PRs")
+        if not staged:
+            return self._error("No staged fixes to commit")
+
+        # Merge fixes per file (multiple comments may touch same file)
+        file_map = {}
+        for cid, fix in staged.items():
+            file_map[fix["path"]] = fix["fixed"]
+
+        file_changes = [{"path": p, "content": c} for p, c in file_map.items()]
+
+        parsed = ado_pr_client.parse_pr_url(pr_info["url"])
+        commit_msg = f"Auto-fix: {len(staged)} review comment(s) addressed"
+
+        try:
+            ado_pr_client.push_file_changes(
+                parsed["org"], parsed["project"],
+                pr_info["repo_id"], pr_info["source_branch"],
+                file_changes, commit_msg)
+        except Exception as e:
+            return self._error(f"Push failed: {e}")
+
+        with _review_lock:
+            _current_review["staged_fixes"] = {}
+
+        self._json({"ok": True, "files_pushed": len(file_changes),
+                     "commit_message": commit_msg})
+
+    # ═══════ History ═══════
 
     def _save_to_history(self, pr_info, comments):
         import datetime
@@ -367,7 +505,7 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
                 for c in comments
             ],
         }
-        history.insert(0, entry)  # newest first
+        history.insert(0, entry)
         _save_history(history)
 
     def _handle_delete_history(self):
@@ -376,6 +514,68 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
         history = [h for h in history if h.get("id") != entry_id]
         _save_history(history)
         self._json({"ok": True})
+
+    def _handle_restore_history(self):
+        """Restore a past review into the active session for posting/fixing."""
+        body = self._read_body()
+        entry_id = body.get("id", "")
+        history = _load_history()
+        entry = next((h for h in history if h.get("id") == entry_id), None)
+        if not entry:
+            return self._error("History entry not found")
+
+        pr_url = entry.get("pr_url", "")
+        if not pr_url:
+            return self._error("History entry has no PR URL")
+
+        parsed = ado_pr_client.parse_pr_url(pr_url)
+        pr_info = ado_pr_client.get_pr_info(
+            parsed["org"], parsed["project"],
+            parsed["repo_name"], parsed["pr_id"])
+        changed_files = ado_pr_client.get_pr_changes(
+            parsed["org"], parsed["project"], pr_info["repo_id"], pr_info["pr_id"])
+
+        is_author = False
+        try:
+            me = ado_pr_client.get_current_user(parsed["org"])
+            is_author = me.get("id") == pr_info.get("author_id", "")
+        except Exception:
+            pass
+
+        source_files = [f for f in changed_files
+                        if not any(f["path"].endswith(ext)
+                                   for ext in [".json", ".png", ".jpg", ".gif",
+                                               ".ico", ".woff", ".woff2"])]
+        diffs = ado_pr_client.get_all_diffs(
+            parsed["org"], parsed["project"],
+            pr_info["repo_id"], pr_info["pr_id"], source_files)
+
+        comments = []
+        for i, c in enumerate(entry.get("comments", [])):
+            comments.append({
+                "id": i,
+                "severity": c.get("severity", "medium"),
+                "file": c.get("file", ""),
+                "line": c.get("line", 0),
+                "comment": c.get("comment", ""),
+                "issue": c.get("issue", ""),
+                "suggestion": c.get("suggestion", ""),
+                "posted": False,
+            })
+
+        with _review_lock:
+            _current_review["pr_info"] = pr_info
+            _current_review["changed_files"] = changed_files
+            _current_review["diffs"] = diffs
+            _current_review["comments"] = comments
+            _current_review["is_author"] = is_author
+            _current_review["staged_fixes"] = {}
+
+        self._json({"ok": True, "pr_info": pr_info,
+                     "files_count": len(changed_files),
+                     "diffs_count": len(diffs),
+                     "is_author": is_author,
+                     "comments": comments})
 
 
 def main():

@@ -152,6 +152,57 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
 .row-btn.delete { background: var(--red); color: var(--crust); }
 .row-btn.delete:hover { opacity: .85; }
 .row-btn.posted { background: var(--surface1); color: var(--muted); cursor: default; }
+.row-btn.fix { background: var(--teal); color: var(--crust); }
+.row-btn.fix:hover { opacity: .85; }
+.row-btn.unstage { background: var(--peach); color: var(--crust); }
+.row-btn.unstage:hover { opacity: .85; }
+.row-btn.staged-badge { background: var(--teal); color: var(--crust); cursor: default; font-size: .7rem; }
+
+/* ═══════════ Author badge ═══════════ */
+.author-badge {
+  font-size: .75rem; padding: 3px 8px; border-radius: 10px;
+  background: var(--teal); color: var(--crust); font-weight: 600;
+}
+
+/* ═══════════ Staged fixes panel ═══════════ */
+.staged-section {
+  display: none; flex-direction: column; gap: 8px;
+}
+.staged-section.visible { display: flex; }
+.staged-header {
+  display: flex; align-items: center; gap: 10px; padding: 8px 0;
+}
+.staged-header h3 { font-size: .95rem; font-weight: 600; color: var(--teal); }
+.staged-count-badge {
+  font-size: .75rem; padding: 2px 8px; border-radius: 10px;
+  background: var(--teal); color: var(--crust); font-weight: 600;
+}
+.staged-fix-entry {
+  background: var(--surface); border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--teal); border-left: 4px solid var(--teal);
+}
+.staged-fix-header {
+  padding: 8px 14px; display: flex; align-items: center; gap: 10px;
+  cursor: pointer; user-select: none;
+}
+.staged-fix-header:hover { background: rgba(148, 226, 213, .05); }
+.staged-fix-header .chevron {
+  transition: transform .2s; font-size: .65rem; color: var(--muted);
+}
+.staged-fix-header .chevron.open { transform: rotate(90deg); }
+.staged-fix-file {
+  font-size: .82rem; font-family: 'Cascadia Code', Consolas, monospace; color: var(--teal);
+}
+.staged-fix-body { display: none; }
+.staged-fix-body.open { display: block; }
+.diff-preview {
+  background: var(--mantle); padding: 10px 14px; overflow-x: auto;
+  font-family: 'Cascadia Code', Consolas, monospace; font-size: .78rem;
+  line-height: 1.5; white-space: pre; max-height: 400px; overflow-y: auto;
+}
+.diff-preview .diff-add { color: var(--green); }
+.diff-preview .diff-del { color: var(--red); }
+.diff-preview .diff-hunk { color: var(--mauve); }
 
 /* ═══════════ Toast ═══════════ */
 .toast {
@@ -334,6 +385,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
     <div class="pr-banner-title" id="prTitle"></div>
     <div class="pr-banner-meta">
       <span>👤 <span id="prAuthor"></span></span>
+      <span id="authorBadgeWrap" style="display:none"><span class="author-badge">Your PR</span></span>
       <span>🔀 <span id="prBranch"></span></span>
       <span>📁 <span id="prFileCount"></span> files</span>
       <span><a id="prLink" href="#" target="_blank">Open in ADO ↗</a></span>
@@ -345,6 +397,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
     <button class="btn btn-mauve" onclick="generateReview()" id="generateBtn">🤖 Generate AI Review</button>
     <button class="btn btn-outline" onclick="toggleAddForm()">+ Add Comment</button>
     <button class="btn btn-green" onclick="postAll()" id="postAllBtn">🚀 Post All to PR</button>
+    <button class="btn btn-outline" id="commitFixesBtn" style="display:none;border-color:var(--teal);color:var(--teal);" onclick="commitFixes()">📦 Commit All Fixes</button>
     <span class="comment-count" id="commentCount"></span>
   </div>
 
@@ -412,11 +465,21 @@ input, select, textarea { font-family: inherit; font-size: inherit; }
           <th class="comment-cell">Comment</th>
           <th style="width:180px">Issue</th>
           <th style="width:180px">Suggestion</th>
-          <th style="width:120px">Actions</th>
+          <th style="width:160px">Actions</th>
         </tr>
       </thead>
       <tbody id="commentsBody"></tbody>
     </table>
+  </div>
+
+  <!-- Staged Fixes (git-style) -->
+  <div id="stagedSection" class="staged-section">
+    <div class="staged-header">
+      <h3>📦 Staged Fixes</h3>
+      <span class="staged-count-badge" id="stagedCount">0</span>
+      <button class="btn btn-outline" style="margin-left:auto;font-size:.8rem;border-color:var(--teal);color:var(--teal);" onclick="commitFixes()">Commit All Fixes →</button>
+    </div>
+    <div id="stagedBody"></div>
   </div>
 
   <div id="emptyState" class="empty-state">
@@ -478,9 +541,32 @@ async function api(method, path, body) {
 }
 
 // ── State ──
-let reviewData = { pr_info: null, comments: [] };
+let reviewData = { pr_info: null, comments: [], is_author: false, staged_fixes: {} };
 
-// ── Load PR ──
+// ── Show PR banner (shared helper) ──
+function showPRBanner(pr_info, files_count, diffs_count, is_author) {
+  reviewData.pr_info = pr_info;
+  reviewData.is_author = is_author;
+
+  const b = document.getElementById('prBanner');
+  b.classList.add('visible');
+  document.getElementById('prTitle').textContent = pr_info.title;
+  document.getElementById('prAuthor').textContent = pr_info.author;
+  document.getElementById('prBranch').textContent =
+    `${pr_info.source_branch} → ${pr_info.target_branch}`;
+  document.getElementById('prFileCount').textContent = files_count;
+  document.getElementById('prLink').href = pr_info.url;
+
+  // Author badge
+  document.getElementById('authorBadgeWrap').style.display = is_author ? '' : 'none';
+  // Commit fixes button visibility
+  document.getElementById('commitFixesBtn').style.display = is_author ? '' : 'none';
+
+  document.getElementById('actionsBar').classList.add('visible');
+  document.getElementById('emptyState').style.display = 'none';
+}
+
+// ── Load PR (auto-generates review) ──
 async function loadPR() {
   const url = document.getElementById('prUrl').value.trim();
   if (!url) return toast('Paste a PR URL first', 'error');
@@ -488,32 +574,34 @@ async function loadPR() {
   showLoading('Fetching PR diff…');
   try {
     const result = await api('POST', '/api/load-pr', { url });
-    reviewData.pr_info = result.pr_info;
+    showPRBanner(result.pr_info, result.files_count, result.diffs_count, result.is_author);
     reviewData.comments = [];
-
-    // Show banner
-    const b = document.getElementById('prBanner');
-    b.classList.add('visible');
-    document.getElementById('prTitle').textContent = result.pr_info.title;
-    document.getElementById('prAuthor').textContent = result.pr_info.author;
-    document.getElementById('prBranch').textContent =
-      `${result.pr_info.source_branch} → ${result.pr_info.target_branch}`;
-    document.getElementById('prFileCount').textContent = result.files_count;
-    document.getElementById('prLink').href = result.pr_info.url;
-
-    document.getElementById('actionsBar').classList.add('visible');
-    document.getElementById('emptyState').style.display = 'none';
-
+    reviewData.staged_fixes = {};
     renderComments([]);
-    toast(`Loaded: ${result.files_count} files, ${result.diffs_count} diffs`, 'success');
+    renderStagedFixes({});
+    toast(`Loaded: ${result.files_count} files, ${result.diffs_count} diffs — generating review…`, 'success');
   } catch (e) {
     toast(e.message, 'error');
+    hideLoading();
+    return;
+  }
+
+  // Auto-generate review
+  try {
+    document.getElementById('loadingText').textContent = 'Generating AI review… this may take 30-60s';
+    const review = await api('POST', '/api/generate-review');
+    reviewData.comments = review.comments;
+    renderComments(review.comments);
+    loadHistory();
+    toast(`Generated ${review.comments.length} comments`, 'success');
+  } catch (e) {
+    toast(`PR loaded, but review failed: ${e.message}`, 'error');
   } finally {
     hideLoading();
   }
 }
 
-// ── Generate AI Review ──
+// ── Generate AI Review (manual) ──
 async function generateReview() {
   showLoading('Generating AI review… this may take 30-60s');
   try {
@@ -545,8 +633,29 @@ function renderComments(comments) {
   document.getElementById('commentCount').textContent =
     `${comments.length} comments (${unposted} pending)`;
 
-  tbody.innerHTML = comments.map((c, i) => `
-    <tr data-id="${c.id}" class="${c.posted ? 'posted-row' : ''}">
+  const isAuthor = reviewData.is_author;
+  const staged = reviewData.staged_fixes || {};
+
+  tbody.innerHTML = comments.map((c, i) => {
+    const isStaged = staged[String(c.id)];
+    let actionsHtml;
+    if (c.posted) {
+      actionsHtml = '<button class="row-btn posted" disabled>✓ Posted</button>';
+    } else {
+      actionsHtml = `<button class="row-btn post" onclick="postOne(${c.id})">Post</button>`;
+      if (isAuthor && c.file) {
+        if (isStaged) {
+          actionsHtml += `<button class="row-btn staged-badge" disabled>✓ Staged</button>`;
+          actionsHtml += `<button class="row-btn unstage" onclick="unstageFix(${c.id})">Unstage</button>`;
+        } else {
+          actionsHtml += `<button class="row-btn fix" onclick="autoFix(${c.id})">🔧 Fix</button>`;
+        }
+      }
+      actionsHtml += `<button class="row-btn delete" onclick="deleteComment(${c.id})">✕</button>`;
+    }
+
+    return `
+    <tr data-id="${c.id}" class="${c.posted ? 'posted-row' : ''} ${isStaged ? 'staged-row' : ''}">
       <td>${i + 1}</td>
       <td><span class="sev-badge sev-${c.severity}">${c.severity}</span></td>
       <td><span class="file-path" title="${esc(c.file)}">${shortPath(c.file)}</span></td>
@@ -559,16 +668,12 @@ function renderComments(comments) {
       <td class="issue-cell">${esc(c.issue)}</td>
       <td class="suggestion-cell">${esc(c.suggestion)}</td>
       <td>
-        <div class="row-actions">
-          ${c.posted
-            ? '<button class="row-btn posted" disabled>✓ Posted</button>'
-            : `<button class="row-btn post" onclick="postOne(${c.id})">Post</button>
-               <button class="row-btn delete" onclick="deleteComment(${c.id})">✕</button>`
-          }
-        </div>
+        <div class="row-actions">${actionsHtml}</div>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
+
+  requestAnimationFrame(autoResizeTextareas);
 }
 
 function esc(s) {
@@ -585,8 +690,7 @@ function shortPath(p) {
 // ── Update comment ──
 async function updateComment(id, field, value) {
   try {
-    const result = await api('PUT', `/api/comment/${id}`, { [field]: value });
-    // Update local state
+    await api('PUT', `/api/comment/${id}`, { [field]: value });
     const c = reviewData.comments.find(c => c.id === id);
     if (c) c[field] = value;
     toast('Comment updated', 'success');
@@ -600,7 +704,9 @@ async function deleteComment(id) {
   try {
     await api('DELETE', `/api/comment/${id}`);
     reviewData.comments = reviewData.comments.filter(c => c.id !== id);
+    delete reviewData.staged_fixes[String(id)];
     renderComments(reviewData.comments);
+    renderStagedFixes(reviewData.staged_fixes);
     toast('Comment removed', 'info');
   } catch (e) {
     toast(e.message, 'error');
@@ -628,7 +734,6 @@ async function postAll() {
   showLoading(`Posting ${unposted} comments…`);
   try {
     const result = await api('POST', '/api/post-all-comments');
-    // Refresh state
     const full = await api('GET', '/api/review');
     reviewData.comments = full.comments || [];
     renderComments(reviewData.comments);
@@ -639,6 +744,110 @@ async function postAll() {
   } finally {
     hideLoading();
   }
+}
+
+// ═══════ Auto-Fix (git-style staging) ═══════
+
+async function autoFix(commentId) {
+  showLoading('Generating fix with Copilot CLI…');
+  try {
+    const result = await api('POST', '/api/auto-fix', { id: commentId });
+    reviewData.staged_fixes[String(commentId)] = {
+      path: result.diff_preview.split('\n')[0]?.replace('--- a/', '') || '',
+      diff_preview: result.diff_preview,
+    };
+    renderComments(reviewData.comments);
+    renderStagedFixes(reviewData.staged_fixes);
+    toast(`Fix staged (${result.staged_count} total)`, 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+async function unstageFix(commentId) {
+  try {
+    const result = await api('POST', '/api/unstage-fix', { id: commentId });
+    delete reviewData.staged_fixes[String(commentId)];
+    renderComments(reviewData.comments);
+    renderStagedFixes(reviewData.staged_fixes);
+    toast('Fix unstaged', 'info');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function commitFixes() {
+  const count = Object.keys(reviewData.staged_fixes).length;
+  if (!count) return toast('No staged fixes to commit', 'info');
+
+  showLoading(`Committing ${count} fix(es) to PR branch…`);
+  try {
+    const result = await api('POST', '/api/commit-fixes');
+    reviewData.staged_fixes = {};
+    renderComments(reviewData.comments);
+    renderStagedFixes({});
+    toast(`Committed! ${result.files_pushed} file(s) pushed`, 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+function renderStagedFixes(staged) {
+  const section = document.getElementById('stagedSection');
+  const body = document.getElementById('stagedBody');
+  const entries = Object.entries(staged || {});
+
+  document.getElementById('stagedCount').textContent = entries.length;
+  document.getElementById('commitFixesBtn').style.display =
+    (reviewData.is_author && entries.length > 0) ? '' : 'none';
+
+  if (!entries.length) {
+    section.classList.remove('visible');
+    return;
+  }
+
+  section.classList.add('visible');
+  body.innerHTML = entries.map(([cid, fix]) => {
+    const comment = reviewData.comments.find(c => c.id === parseInt(cid));
+    const label = comment ? esc(comment.comment).substring(0, 80) : `Comment #${cid}`;
+    const diffHtml = colorDiff(fix.diff_preview || '');
+    return `
+      <div class="staged-fix-entry">
+        <div class="staged-fix-header" onclick="toggleStagedEntry('sf-${cid}')">
+          <span class="chevron" id="sfchev-${cid}">▶</span>
+          <span class="staged-fix-file">${shortPath(fix.path || '')}</span>
+          <span style="font-size:.78rem;color:var(--subtext);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${label}</span>
+          <button class="row-btn unstage" style="flex-shrink:0;" onclick="event.stopPropagation();unstageFix(${cid})">Unstage</button>
+        </div>
+        <div class="staged-fix-body" id="sf-${cid}">
+          <div class="diff-preview">${diffHtml}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function toggleStagedEntry(id) {
+  const body = document.getElementById(id);
+  const cid = id.replace('sf-', '');
+  const chevron = document.getElementById('sfchev-' + cid);
+  body.classList.toggle('open');
+  chevron.classList.toggle('open');
+}
+
+function colorDiff(text) {
+  if (!text) return '<span style="color:var(--muted)">No diff available</span>';
+  return text.split('\n').map(line => {
+    const e = esc(line);
+    if (line.startsWith('+++') || line.startsWith('---')) return `<span class="diff-hunk">${e}</span>`;
+    if (line.startsWith('@@')) return `<span class="diff-hunk">${e}</span>`;
+    if (line.startsWith('+')) return `<span class="diff-add">${e}</span>`;
+    if (line.startsWith('-')) return `<span class="diff-del">${e}</span>`;
+    return e;
+  }).join('\n');
 }
 
 // ── Add comment form ──
@@ -662,7 +871,6 @@ async function submitAddComment() {
     reviewData.comments.push(result.comment);
     renderComments(reviewData.comments);
     toggleAddForm();
-    // Clear form
     ['addFile','addLine','addComment','addIssue','addSuggestion'].forEach(
       id => document.getElementById(id).value = '');
     toast('Comment added', 'success');
@@ -741,13 +949,6 @@ function autoResizeTextareas() {
   });
 }
 
-// Re-run after render
-const _origRender = renderComments;
-renderComments = function(comments) {
-  _origRender(comments);
-  requestAnimationFrame(autoResizeTextareas);
-};
-
 // ── Review History ──
 let _historyData = [];
 
@@ -805,6 +1006,8 @@ function renderHistory() {
             <span>${dateStr} ${timeStr}</span>
           </div>
           <div class="history-entry-actions">
+            <button class="btn btn-outline" style="font-size:.72rem;padding:2px 8px;border-color:var(--teal);color:var(--teal);"
+                    onclick="event.stopPropagation();restoreHistory('${entry.id}')">↻ Restore</button>
             <a href="${esc(entry.pr_url)}" target="_blank" class="btn btn-outline" style="font-size:.72rem;padding:2px 8px;"
                onclick="event.stopPropagation()">Open PR ↗</a>
             <button class="btn btn-outline" style="font-size:.72rem;padding:2px 8px;border-color:var(--red);color:var(--red);"
@@ -836,6 +1039,23 @@ async function deleteHistory(id) {
     toast('History entry removed', 'info');
   } catch (e) {
     toast(e.message, 'error');
+  }
+}
+
+async function restoreHistory(entryId) {
+  showLoading('Restoring review from history…');
+  try {
+    const result = await api('POST', '/api/restore-history', { id: entryId });
+    showPRBanner(result.pr_info, result.files_count, result.diffs_count, result.is_author);
+    reviewData.comments = result.comments;
+    reviewData.staged_fixes = {};
+    renderComments(result.comments);
+    renderStagedFixes({});
+    toast(`Restored ${result.comments.length} comments — ready to post or fix`, 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    hideLoading();
   }
 }
 

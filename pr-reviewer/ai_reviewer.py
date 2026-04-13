@@ -354,3 +354,118 @@ def generate_review(pr_info, diffs):
              "comment": f"No AI backend available.{error_detail}",
              "issue": "No AI configured",
              "suggestion": "Install Copilot CLI or fill review_config.json"}]
+
+
+_FIX_PROMPT_TEMPLATE = """You are fixing a code file based on a review comment.
+
+FILE: {file_path}
+LINE: {line}
+
+REVIEW COMMENT: {comment}
+ISSUE: {issue}
+SUGGESTED FIX: {suggestion}
+
+CURRENT FILE CONTENT:
+```
+{file_content}
+```
+
+Return ONLY the complete fixed file content — no markdown fences, no explanation, no extra text.
+Keep the fix minimal and surgical — only change what the review comment asks for.
+Preserve all existing formatting, indentation, and line endings."""
+
+
+def generate_fix(file_content, file_path, comment_info):
+    """Generate a code fix for a single review comment using Copilot CLI.
+
+    Args:
+        file_content: current file content (string)
+        file_path: path of the file
+        comment_info: dict with keys: comment, issue, suggestion, line
+
+    Returns:
+        dict with "fixed_content" (str) and "ok" (bool)
+    """
+    if not _is_copilot_cli_available():
+        return {"ok": False, "error": "Copilot CLI not available"}
+
+    prompt = _FIX_PROMPT_TEMPLATE.format(
+        file_path=file_path,
+        line=comment_info.get("line", "?"),
+        comment=comment_info.get("comment", ""),
+        issue=comment_info.get("issue", ""),
+        suggestion=comment_info.get("suggestion", ""),
+        file_content=file_content,
+    )
+
+    # Write to temp file (same pattern as review generation)
+    import tempfile
+    prompt_file = os.path.join(tempfile.gettempdir(), "pr_fix_prompt.txt")
+    with open(prompt_file, "w", encoding="utf-8") as f:
+        f.write(prompt)
+
+    short_prompt = (
+        f"Read the file at {prompt_file} and follow the instructions in it exactly. "
+        f"It contains a code fix request. Return ONLY the complete fixed file content."
+    )
+
+    cmd = [
+        COPILOT_EXE,
+        "--output-format", "json",
+        "--allow-all",
+        "--no-ask-user",
+        "-p", short_prompt,
+    ]
+
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+        cwd=DIR,
+    )
+
+    assistant_content = []
+
+    def read_stdout():
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+                if event.get("type") == "assistant.message":
+                    content = event.get("data", {}).get("content", "")
+                    if content:
+                        assistant_content.append(content)
+            except json.JSONDecodeError:
+                pass
+
+    reader = threading.Thread(target=read_stdout, daemon=True)
+    reader.start()
+
+    try:
+        proc.wait(timeout=180)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        return {"ok": False, "error": "Copilot CLI timed out"}
+
+    reader.join(timeout=10)
+
+    if not assistant_content:
+        return {"ok": False, "error": "Copilot CLI produced no output"}
+
+    fixed = "".join(assistant_content)
+    # Strip markdown fences if Copilot wrapped it
+    if fixed.startswith("```"):
+        lines = fixed.split("\n")
+        # Remove first line (```lang) and last line (```)
+        if lines[-1].strip() == "```":
+            lines = lines[1:-1]
+        else:
+            lines = lines[1:]
+        fixed = "\n".join(lines)
+
+    return {"ok": True, "fixed_content": fixed}

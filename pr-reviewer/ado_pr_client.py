@@ -118,6 +118,7 @@ def get_pr_info(org, project, repo_name, pr_id):
         "title": pr["title"],
         "description": pr.get("description", ""),
         "author": pr["createdBy"]["displayName"],
+        "author_id": pr["createdBy"]["id"],
         "source_branch": pr["sourceRefName"].replace("refs/heads/", ""),
         "target_branch": pr["targetRefName"].replace("refs/heads/", ""),
         "status": pr["status"],
@@ -254,6 +255,77 @@ def get_all_diffs(org, project, repo_id, pr_id, changed_files):
         except Exception as e:
             diffs[path] = f"[Error fetching diff: {e}]"
     return diffs
+
+
+def get_current_user(org):
+    """Get the authenticated user's display name and ID."""
+    url = f"{org}/_apis/connectionData?api-version=7.1"
+    data = _api_get(url)
+    user = data.get("authenticatedUser", {})
+    return {
+        "id": user.get("id", ""),
+        "display_name": user.get("providerDisplayName", ""),
+    }
+
+
+def get_file_at_branch(org, project, repo_id, file_path, branch):
+    """Fetch file content from a specific branch."""
+    encoded_path = urllib.parse.quote(file_path, safe="/")
+    url = (f"{org}/{project}/_apis/git/repositories/{repo_id}"
+           f"/items?path={encoded_path}"
+           f"&versionDescriptor.version={branch}"
+           f"&versionDescriptor.versionType=branch"
+           f"&api-version=7.1")
+    token = get_token()
+    req = urllib.request.Request(url)
+    req.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return resp.read().decode("utf-8", errors="replace")
+
+
+def get_branch_head(org, project, repo_id, branch):
+    """Get the latest commit SHA on a branch."""
+    url = (f"{org}/{project}/_apis/git/repositories/{repo_id}"
+           f"/refs?filter=heads/{branch}&api-version=7.1")
+    data = _api_get(url)
+    refs = data.get("value", [])
+    if refs:
+        return refs[0].get("objectId", "")
+    raise RuntimeError(f"Branch '{branch}' not found")
+
+
+def push_file_changes(org, project, repo_id, branch, file_changes, commit_message):
+    """Push a commit with file changes to a branch.
+
+    Args:
+        file_changes: list of {"path": str, "content": str}
+        commit_message: str
+    """
+    old_object_id = get_branch_head(org, project, repo_id, branch)
+    changes = []
+    for fc in file_changes:
+        changes.append({
+            "changeType": "edit",
+            "item": {"path": fc["path"]},
+            "newContent": {
+                "content": fc["content"],
+                "contentType": "rawtext",
+            },
+        })
+
+    body = {
+        "refUpdates": [{
+            "name": f"refs/heads/{branch}",
+            "oldObjectId": old_object_id,
+        }],
+        "commits": [{
+            "comment": commit_message,
+            "changes": changes,
+        }],
+    }
+    url = (f"{org}/{project}/_apis/git/repositories/{repo_id}"
+           f"/pushes?api-version=7.1")
+    return _api_post(url, body)
 
 
 def post_pr_comment(org, project, repo_id, pr_id, file_path, line, comment_text):
