@@ -80,7 +80,12 @@ class ReviewHandler(http.server.SimpleHTTPRequestHandler):
             with _review_lock:
                 self._json(_current_review)
         elif self.path == "/api/ai-status":
-            self._json({"configured": ai_reviewer.is_ai_configured()})
+            self._json({
+                "configured": ai_reviewer.is_ai_configured(),
+                "copilot_exe": ai_reviewer.COPILOT_EXE,
+                "copilot_available": ai_reviewer._is_copilot_cli_available(),
+                "azure_configured": ai_reviewer._is_azure_openai_configured(),
+            })
         elif self.path == "/api/learnings":
             self._json(ai_reviewer._load_learnings())
         else:
