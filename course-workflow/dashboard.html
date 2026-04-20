@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Course Workflow Pipeline</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --text-muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --orange: #d29922; --red: #f85149;
+    --purple: #bc8cff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px;
+    display: flex; align-items: center; gap: 16px; }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header .back-link { color: var(--accent); text-decoration: none; font-size: 14px; }
+  .header .back-link:hover { text-decoration: underline; }
+  .header .icon { font-size: 28px; }
+
+  .container { max-width: 800px; margin: 24px auto; padding: 0 24px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 20px; margin-bottom: 20px; }
+  .card h2 { font-size: 16px; margin-bottom: 16px; color: var(--accent); }
+  .card h3 { font-size: 14px; margin: 16px 0 8px; color: var(--text-muted); }
+
+  label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 4px; font-weight: 500; }
+  input, select, textarea { width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 14px; font-family: inherit; margin-bottom: 12px; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(88,166,255,0.2); }
+  textarea { resize: vertical; min-height: 60px; }
+  select { cursor: pointer; }
+
+  .url-group { position: relative; }
+  .url-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .url-row input { margin-bottom: 0; flex: 1; }
+  .btn-remove { background: none; border: 1px solid var(--border); color: var(--red); cursor: pointer;
+    border-radius: 4px; width: 32px; height: 34px; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+  .btn-remove:hover { background: rgba(248,81,73,0.1); }
+  .btn-add { background: none; border: 1px dashed var(--border); color: var(--accent); cursor: pointer;
+    border-radius: 6px; padding: 6px 12px; font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
+  .btn-add:hover { background: rgba(88,166,255,0.1); border-color: var(--accent); }
+
+  .toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .toggle-row label { margin-bottom: 0; flex: 1; }
+  .toggle { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+  .toggle input { display: none; }
+  .toggle .slider { position: absolute; inset: 0; background: var(--border); border-radius: 12px; cursor: pointer; transition: .2s; }
+  .toggle .slider::before { content: ''; position: absolute; width: 18px; height: 18px; background: var(--text);
+    border-radius: 50%; left: 3px; top: 3px; transition: .2s; }
+  .toggle input:checked + .slider { background: var(--green); }
+  .toggle input:checked + .slider::before { transform: translateX(20px); }
+
+  .actions { display: flex; gap: 12px; margin-top: 8px; }
+  .btn { padding: 10px 24px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--border); transition: .15s; }
+  .btn-primary { background: var(--green); color: #000; border-color: var(--green); }
+  .btn-primary:hover { background: #2ea043; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary { background: var(--surface); color: var(--accent); }
+  .btn-secondary:hover { background: rgba(88,166,255,0.1); }
+
+  .prompt-preview { background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px; font-family: 'Cascadia Code', Consolas, monospace; font-size: 12px;
+    white-space: pre-wrap; max-height: 300px; overflow-y: auto; color: var(--text-muted);
+    line-height: 1.6; display: none; }
+  .prompt-preview.visible { display: block; }
+
+  .status-msg { padding: 12px 16px; border-radius: 6px; margin-top: 12px; font-size: 14px; display: none; }
+  .status-msg.success { display: block; background: rgba(63,185,80,0.15); border: 1px solid var(--green); color: var(--green); }
+  .status-msg.error { display: block; background: rgba(248,81,73,0.15); border: 1px solid var(--red); color: var(--red); }
+
+  .tab-bar { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid var(--border); }
+  .tab-btn { padding: 12px 24px; background: none; border: none; color: var(--text-muted); font-size: 15px;
+    font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px;
+    transition: .15s; font-family: inherit; display: flex; align-items: center; gap: 8px; }
+  .tab-btn:hover { color: var(--text); background: rgba(88,166,255,0.05); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+
+  .course-info { display: flex; gap: 12px; align-items: center; padding: 8px 12px;
+    background: rgba(88,166,255,0.08); border-radius: 6px; margin-bottom: 12px; font-size: 13px; }
+  .course-info .badge { background: var(--accent); color: #000; padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 600; }
+
+  .new-course-fields { display: none; }
+  .new-course-fields.visible { display: block; }
+
+  .unit-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+  .unit-badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .unit-badge.done { background: rgba(63,185,80,0.2); color: var(--green); }
+  .unit-badge.pending { background: rgba(139,148,158,0.2); color: var(--text-muted); }
+
+  .drop-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 20px; text-align: center;
+    color: var(--text-muted); font-size: 13px; margin-bottom: 12px; transition: .2s; }
+  .drop-zone.dragover { border-color: var(--accent); background: rgba(88,166,255,0.05); color: var(--accent); }
+
+  @media (max-width: 600px) { .container { padding: 0 12px; } .actions { flex-direction: column; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <span class="icon">📚</span>
+  <h1>Course Workflow Pipeline</h1>
+  <a href="http://localhost:8091" class="back-link">← Back to Hub</a>
+</div>
+
+<div class="container">
+  <!-- Tab Bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('process')">📖 Process Unit</button>
+    <button class="tab-btn" onclick="switchTab('quiz')">📝 Unit Quiz</button>
+  </div>
+
+  <!-- ==================== TAB 1: Process Unit ==================== -->
+  <div id="tab-process" class="tab-pane active">
+    <!-- Course Selection -->
+    <div class="card">
+      <h2>📖 Course</h2>
+      <label for="courseSelect">Select Course</label>
+      <select id="courseSelect">
+        <option value="">Loading...</option>
+      </select>
+
+      <div id="courseInfo" class="course-info" style="display:none">
+        <span id="courseNameHe"></span>
+        <span class="badge" id="courseUnitCount"></span>
+      </div>
+      <div id="unitBadges" class="unit-badges"></div>
+
+      <div id="newCourseFields" class="new-course-fields">
+        <h3>New Course Details</h3>
+        <label for="nameHe">Course Name (Hebrew)</label>
+        <input type="text" id="nameHe" placeholder="פסיכולוגיה התפתחותית" dir="rtl">
+        <label for="nameEn">Course Name (English)</label>
+        <input type="text" id="nameEn" placeholder="Developmental Psychology">
+        <label for="onenoteUrl">OneNote Section Link</label>
+        <input type="text" id="onenoteUrl" placeholder="onenote:https://...">
+      </div>
+    </div>
+
+    <!-- Unit & Links -->
+    <div class="card">
+      <h2>🔗 Unit & Sources</h2>
+
+      <label for="unitNumber">Unit Number</label>
+      <input type="number" id="unitNumber" min="1" value="1" style="width:100px">
+
+      <h3>Lecture URLs or Local Paths</h3>
+      <div id="lectureUrls" class="url-group"></div>
+      <button class="btn-add" onclick="addUrl('lectureUrls')">+ Add Lecture URL</button>
+
+      <div class="drop-zone" id="dropZone">
+        📋 Paste or drop links here — they'll be auto-sorted into Slides / Articles / Videos
+      </div>
+
+      <h3>Slide / PDF URLs</h3>
+      <div id="pdfUrls" class="url-group"></div>
+      <button class="btn-add" onclick="addUrl('pdfUrls')">+ Add Slide URL</button>
+
+      <h3>Article URLs</h3>
+      <div id="articleUrls" class="url-group"></div>
+      <button class="btn-add" onclick="addUrl('articleUrls')">+ Add Article URL</button>
+
+      <h3>Supplementary Video URLs</h3>
+      <div id="videoUrls" class="url-group"></div>
+      <button class="btn-add" onclick="addUrl('videoUrls')">+ Add Video URL</button>
+    </div>
+
+    <!-- Launch Options (Process) -->
+    <div class="card">
+      <h2>⚙️ Launch Options</h2>
+      <div class="toggle-row">
+        <label>🤖 Autopilot Mode <span style="color:var(--text-muted); font-weight:normal">(CLI runs autonomously)</span></label>
+        <label class="toggle"><input type="checkbox" id="autopilot" checked><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <label>🔓 Allow All Permissions <span style="color:var(--text-muted); font-weight:normal">(file access, tools, URLs)</span></label>
+        <label class="toggle"><input type="checkbox" id="allowAll" checked><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <label>🪟 Reuse Terminal Window <span style="color:var(--text-muted); font-weight:normal">(open tab in existing window)</span></label>
+        <label class="toggle"><input type="checkbox" id="sameWindow" checked><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <!-- Process Actions -->
+    <div class="card">
+      <div class="actions">
+        <button class="btn btn-primary" id="submitBtn" onclick="submit()">🚀 Launch Copilot CLI</button>
+        <button class="btn btn-secondary" onclick="previewPrompt()">👁 Preview Prompt</button>
+      </div>
+      <div id="statusMsg" class="status-msg"></div>
+      <div id="promptPreview" class="prompt-preview"></div>
+    </div>
+  </div>
+
+  <!-- ==================== TAB 2: Unit Quiz ==================== -->
+  <div id="tab-quiz" class="tab-pane">
+    <div class="card">
+      <h2>📝 Unit Quiz</h2>
+      <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">
+        Paste quiz questions below. Copilot CLI will answer them using only the unit summary, write results, and update the summary if needed.
+      </p>
+
+      <label for="quizCourseSelect">Course</label>
+      <select id="quizCourseSelect">
+        <option value="">Loading...</option>
+      </select>
+
+      <label for="quizUnitNumber">Unit Number</label>
+      <select id="quizUnitNumber">
+        <option value="">Select a course first</option>
+      </select>
+
+      <label for="quizQuestions">Quiz Questions</label>
+      <textarea id="quizQuestions" rows="10" placeholder="Paste your quiz questions here...&#10;&#10;1. אפיגנטיקה עוסקת בשינויים...&#10;   נכון / לא-נכון&#10;&#10;2. ..." dir="rtl"></textarea>
+
+      <!-- Launch Options (Quiz) -->
+      <h3 style="margin-top:16px">⚙️ Launch Options</h3>
+      <div class="toggle-row">
+        <label>🤖 Autopilot Mode <span style="color:var(--text-muted); font-weight:normal">(CLI runs autonomously)</span></label>
+        <label class="toggle"><input type="checkbox" id="quizAutopilot" checked><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <label>🔓 Allow All Permissions <span style="color:var(--text-muted); font-weight:normal">(file access, tools, URLs)</span></label>
+        <label class="toggle"><input type="checkbox" id="quizAllowAll" checked><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <label>🪟 Reuse Terminal Window <span style="color:var(--text-muted); font-weight:normal">(open tab in existing window)</span></label>
+        <label class="toggle"><input type="checkbox" id="quizSameWindow" checked><span class="slider"></span></label>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="quizSubmitBtn" onclick="submitQuiz()">📝 Launch Quiz Session</button>
+        <button class="btn btn-secondary" onclick="previewQuizPrompt()">👁 Preview Prompt</button>
+      </div>
+      <div id="quizStatusMsg" class="status-msg"></div>
+      <div id="quizPromptPreview" class="prompt-preview"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let courses = [];
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`).classList.add('active');
+}
+
+async function loadCourses() {
+  try {
+    const resp = await fetch('/api/courses');
+    courses = await resp.json();
+  } catch { courses = []; }
+
+  const sel = document.getElementById('courseSelect');
+  sel.innerHTML = '';
+
+  const optNew = document.createElement('option');
+  optNew.value = '__new__';
+  optNew.textContent = '➕ Create New Course';
+  sel.appendChild(optNew);
+
+  courses.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.folder;
+    opt.textContent = `${c.name_en} (${c.name})`;
+    sel.appendChild(opt);
+  });
+
+  // Select the first existing course if available
+  if (courses.length > 0) sel.value = courses[0].folder;
+  onCourseChange();
+}
+
+function onCourseChange() {
+  const val = document.getElementById('courseSelect').value;
+  const isNew = val === '__new__';
+  document.getElementById('newCourseFields').classList.toggle('visible', isNew);
+  const infoEl = document.getElementById('courseInfo');
+  const badgesEl = document.getElementById('unitBadges');
+
+  if (isNew) {
+    infoEl.style.display = 'none';
+    badgesEl.innerHTML = '';
+    document.getElementById('unitNumber').value = 1;
+  } else {
+    const course = courses.find(c => c.folder === val);
+    if (course) {
+      infoEl.style.display = 'flex';
+      document.getElementById('courseNameHe').textContent = course.name;
+      document.getElementById('courseUnitCount').textContent = `${course.units.length} units`;
+      badgesEl.innerHTML = course.units.map(u =>
+        `<span class="unit-badge ${u.has_output ? 'done' : 'pending'}">Unit ${u.number}${u.has_output ? ' ✓' : ''}</span>`
+      ).join('');
+      document.getElementById('unitNumber').value = course.next_unit;
+    }
+  }
+}
+
+document.getElementById('courseSelect').addEventListener('change', onCourseChange);
+
+// URL management
+function addUrl(containerId, value = '') {
+  const container = document.getElementById(containerId);
+  const row = document.createElement('div');
+  row.className = 'url-row';
+  row.innerHTML = `<input type="text" value="${escapeHtml(value)}" placeholder="https://...">
+    <button class="btn-remove" onclick="this.parentElement.remove()" title="Remove">×</button>`;
+  container.appendChild(row);
+  if (!value) row.querySelector('input').focus();
+}
+
+function getUrls(containerId) {
+  return [...document.getElementById(containerId).querySelectorAll('input')]
+    .map(i => i.value.trim()).filter(v => v);
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Drop zone / paste handler
+const dropZone = document.getElementById('dropZone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const text = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text/uri-list');
+  if (text) sortAndAddUrls(text);
+});
+dropZone.addEventListener('paste', e => {
+  const text = (e.clipboardData || window.clipboardData).getData('text');
+  if (text) { e.preventDefault(); sortAndAddUrls(text); }
+});
+// Make drop zone focusable for paste
+dropZone.setAttribute('tabindex', '0');
+dropZone.addEventListener('click', () => dropZone.focus());
+
+function sortAndAddUrls(text) {
+  const urls = text.split(/[\n\r]+/).map(u => u.trim()).filter(u => u.startsWith('http'));
+  let added = 0;
+  urls.forEach(url => {
+    const lower = url.toLowerCase();
+    if (lower.includes('youtube.com') || lower.includes('youtu.be') || lower.includes('dailymotion') || lower.includes('vimeo')) {
+      addUrl('videoUrls', url);
+    } else if (lower.includes('.pdf') || lower.includes('.pptx') || lower.includes('.ppt') || lower.includes('pluginfile')) {
+      addUrl('pdfUrls', url);
+    } else if (lower.includes('moodle') || lower.includes('mod/page') || lower.includes('mod/url')) {
+      // Could be lecture page
+      addUrl('lectureUrls', url);
+    } else {
+      // Default to article
+      addUrl('articleUrls', url);
+    }
+    added++;
+  });
+  if (added > 0) {
+    dropZone.textContent = `✅ Added ${added} link(s) — check the fields below`;
+    setTimeout(() => { dropZone.textContent = '📋 Paste or drop links here — they\'ll be auto-sorted into Slides / Articles / Videos'; }, 3000);
+  }
+}
+
+function getFormData() {
+  const isNew = document.getElementById('courseSelect').value === '__new__';
+  const data = {
+    is_new_course: isNew,
+    unit_number: parseInt(document.getElementById('unitNumber').value) || 1,
+    lecture_urls: getUrls('lectureUrls'),
+    pdf_urls: getUrls('pdfUrls'),
+    article_urls: getUrls('articleUrls'),
+    video_urls: getUrls('videoUrls'),
+    autopilot: document.getElementById('autopilot').checked,
+    allow_all: document.getElementById('allowAll').checked,
+    same_window: document.getElementById('sameWindow').checked,
+  };
+
+  if (isNew) {
+    data.name_he = document.getElementById('nameHe').value.trim();
+    data.name_en = document.getElementById('nameEn').value.trim();
+    data.onenote_url = document.getElementById('onenoteUrl').value.trim();
+  } else {
+    data.course_folder = document.getElementById('courseSelect').value;
+  }
+  return data;
+}
+
+async function previewPrompt() {
+  const data = getFormData();
+  const preview = document.getElementById('promptPreview');
+  const status = document.getElementById('statusMsg');
+  status.className = 'status-msg'; status.style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/preview-prompt', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+    });
+    const result = await resp.json();
+    preview.textContent = result.prompt;
+    preview.classList.add('visible');
+  } catch(e) {
+    status.textContent = '❌ Error generating preview: ' + e.message;
+    status.className = 'status-msg error';
+  }
+}
+
+async function submit() {
+  const data = getFormData();
+  const btn = document.getElementById('submitBtn');
+  const status = document.getElementById('statusMsg');
+  btn.disabled = true;
+  btn.textContent = '⏳ Launching...';
+  status.className = 'status-msg'; status.style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/submit', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      status.textContent = '✅ ' + result.message;
+      status.className = 'status-msg success';
+    } else {
+      status.textContent = '❌ ' + (result.error || 'Unknown error');
+      status.className = 'status-msg error';
+    }
+  } catch(e) {
+    status.textContent = '❌ Error: ' + e.message;
+    status.className = 'status-msg error';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🚀 Launch Copilot CLI';
+  }
+}
+
+loadCourses();
+
+// --- Quiz logic ---
+function loadQuizCourses() {
+  const sel = document.getElementById('quizCourseSelect');
+  sel.innerHTML = '';
+  courses.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.folder;
+    opt.textContent = `${c.name_en} (${c.name})`;
+    sel.appendChild(opt);
+  });
+  if (courses.length > 0) sel.value = courses[0].folder;
+  onQuizCourseChange();
+}
+
+function onQuizCourseChange() {
+  const folder = document.getElementById('quizCourseSelect').value;
+  const course = courses.find(c => c.folder === folder);
+  const unitSel = document.getElementById('quizUnitNumber');
+  unitSel.innerHTML = '';
+  if (course) {
+    const unitsWithOutput = course.units.filter(u => u.has_output);
+    if (unitsWithOutput.length === 0) {
+      unitSel.innerHTML = '<option value="">No units with summaries yet</option>';
+    } else {
+      unitsWithOutput.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.number;
+        opt.textContent = `Unit ${u.number}`;
+        unitSel.appendChild(opt);
+      });
+    }
+  }
+}
+
+document.getElementById('quizCourseSelect').addEventListener('change', onQuizCourseChange);
+
+// Patch loadCourses to also populate quiz selectors
+const _origLoadCourses = loadCourses;
+loadCourses = async function() {
+  await _origLoadCourses();
+  loadQuizCourses();
+};
+loadCourses();
+
+function getQuizData() {
+  return {
+    course_folder: document.getElementById('quizCourseSelect').value,
+    unit_number: parseInt(document.getElementById('quizUnitNumber').value) || 1,
+    questions: document.getElementById('quizQuestions').value.trim(),
+    autopilot: document.getElementById('quizAutopilot').checked,
+    allow_all: document.getElementById('quizAllowAll').checked,
+    same_window: document.getElementById('quizSameWindow').checked,
+  };
+}
+
+async function previewQuizPrompt() {
+  const data = getQuizData();
+  const preview = document.getElementById('quizPromptPreview');
+  const status = document.getElementById('quizStatusMsg');
+  status.className = 'status-msg'; status.style.display = 'none';
+
+  if (!data.questions) {
+    status.textContent = '⚠️ Please paste quiz questions first.';
+    status.className = 'status-msg error';
+    return;
+  }
+
+  try {
+    const resp = await fetch('/api/preview-quiz', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+    });
+    const result = await resp.json();
+    preview.textContent = result.prompt;
+    preview.classList.add('visible');
+  } catch(e) {
+    status.textContent = '❌ Error generating preview: ' + e.message;
+    status.className = 'status-msg error';
+  }
+}
+
+async function submitQuiz() {
+  const data = getQuizData();
+  const btn = document.getElementById('quizSubmitBtn');
+  const status = document.getElementById('quizStatusMsg');
+  btn.disabled = true;
+  btn.textContent = '⏳ Launching...';
+  status.className = 'status-msg'; status.style.display = 'none';
+
+  if (!data.questions) {
+    status.textContent = '⚠️ Please paste quiz questions first.';
+    status.className = 'status-msg error';
+    btn.disabled = false;
+    btn.textContent = '📝 Launch Quiz Session';
+    return;
+  }
+
+  try {
+    const resp = await fetch('/api/submit-quiz', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      status.textContent = '✅ ' + result.message;
+      status.className = 'status-msg success';
+    } else {
+      status.textContent = '❌ ' + (result.error || 'Unknown error');
+      status.className = 'status-msg error';
+    }
+  } catch(e) {
+    status.textContent = '❌ Error: ' + e.message;
+    status.className = 'status-msg error';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📝 Launch Quiz Session';
+  }
+}
+</script>
+</body>
+</html>

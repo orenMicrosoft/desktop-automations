@@ -75,5 +75,16 @@
     "folder": "pr-reviewer",
     "cmd": ["pr_reviewer_server.py", "--no-browser"],
     "health_path": "/api/health"
+  },
+  {
+    "id": "course-workflow",
+    "name": "Course Workflow",
+    "description": "Course summarization pipeline — download materials, transcribe, generate Hebrew summaries, export to OneNote",
+    "schedule": "On demand",
+    "dashboard": "http://localhost:8092/dashboard.html",
+    "port": 8092,
+    "folder": "course-workflow",
+    "cmd": ["dashboard_server.py", "--no-browser"],
+    "health_path": "/dashboard.html"
   }
 ]
