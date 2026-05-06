@@ -86,5 +86,27 @@
     "folder": "course-workflow",
     "cmd": ["dashboard_server.py", "--no-browser"],
     "health_path": "/dashboard.html"
+  },
+  {
+    "id": "realestate-finder",
+    "name": "Real Estate Finder",
+    "description": "Search Israeli real estate — compare listings vs. real transactions, find below-market deals near Zichron Yaakov",
+    "schedule": "On demand + daily refresh",
+    "dashboard": "http://localhost:8098/dashboard.html",
+    "port": 8098,
+    "folder": "realestate-finder",
+    "cmd": ["dashboard_server.py", "--no-browser"],
+    "health_path": "/api/health"
+  },
+  {
+    "id": "status-dashboard",
+    "name": "Status Dashboard",
+    "description": "Track work streams, tasks, and progress — click to update, export to markdown for Teams/manager",
+    "schedule": "Always available",
+    "dashboard": "http://localhost:8099/dashboard.html",
+    "port": 8099,
+    "folder": "status-dashboard",
+    "cmd": ["status_dashboard.py", "--no-browser"],
+    "health_path": "/api/health"
   }
 ]

@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Status Dashboard — My Automations</title>
+<style>
+:root {
+  --bg:#1e1e2e; --mantle:#181825; --surface:#313244; --surface1:#45475a; --overlay:#585b70;
+  --text:#cdd6f4; --muted:#6c7086; --subtext:#a6adc8;
+  --blue:#89b4fa; --green:#a6e3a1; --red:#f38ba8; --yellow:#f9e2af;
+  --mauve:#cba6f7; --teal:#94e2d5; --peach:#fab387; --pink:#f5c2e7;
+  --sky:#89dceb; --lavender:#b4befe;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+a{color:var(--blue);text-decoration:none}
+input,select,textarea{font-family:inherit;font-size:inherit;background:var(--surface);border:1px solid var(--surface1);border-radius:6px;color:var(--text);padding:6px 10px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--blue)}
+textarea{resize:vertical;min-height:60px}
+::-webkit-scrollbar{width:8px}
+::-webkit-scrollbar-track{background:var(--mantle)}
+::-webkit-scrollbar-thumb{background:var(--surface1);border-radius:4px}
+
+.header{background:var(--mantle);border-bottom:1px solid var(--surface);padding:14px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100}
+.header h1{font-size:1.4rem;font-weight:600}
+.header h1 span{color:var(--mauve)}
+.header-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+.header-actions .last-update{font-size:.75rem;color:var(--muted)}
+.btn{padding:6px 14px;border-radius:8px;font-size:.8rem;font-weight:600;transition:all .15s}
+.btn-primary{background:var(--mauve);color:var(--bg)}
+.btn-primary:hover{filter:brightness(1.1)}
+.btn-outline{border:1px solid var(--surface1);color:var(--subtext)}
+.btn-outline:hover{border-color:var(--blue);color:var(--blue)}
+.btn-danger{color:var(--red)}
+.btn-danger:hover{background:rgba(243,139,168,.15)}
+.btn-sm{padding:3px 8px;font-size:.72rem}
+
+.main{padding:24px;max-width:1200px;margin:0 auto}
+
+/* Tabs */
+.tabs{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--surface)}
+.tab{padding:8px 18px;font-size:.85rem;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+.tab .count{background:var(--surface);padding:1px 7px;border-radius:10px;font-size:.7rem;margin-left:6px}
+
+/* Stream cards */
+.streams{display:flex;flex-direction:column;gap:16px}
+.stream-card{background:var(--surface);border-radius:12px;padding:20px;border-left:4px solid var(--muted);transition:all .2s}
+.stream-card[data-status="active"]{border-left-color:var(--red)}
+.stream-card[data-status="paused"]{border-left-color:var(--yellow)}
+.stream-card[data-status="done"]{border-left-color:var(--green)}
+
+.stream-header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.stream-title{font-size:1.05rem;font-weight:600;flex:1}
+.stream-title input{font-size:1.05rem;font-weight:600;width:100%;background:transparent;border:none;color:var(--text);padding:0}
+.stream-title input:focus{border-bottom:1px solid var(--blue)}
+.status-badge{font-size:.7rem;padding:3px 10px;border-radius:10px;font-weight:600;text-transform:uppercase;cursor:pointer;user-select:none}
+.status-badge.active{background:rgba(243,139,168,.15);color:var(--red)}
+.status-badge.paused{background:rgba(249,226,175,.15);color:var(--yellow)}
+.status-badge.done{background:rgba(166,227,161,.15);color:var(--green)}
+
+.stream-meta{display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap;font-size:.8rem;color:var(--subtext)}
+.stream-meta label{color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.5px}
+.stream-meta .field{display:flex;flex-direction:column;gap:2px}
+.stream-meta input{font-size:.8rem;padding:3px 8px;width:140px}
+
+.task-list{display:flex;flex-direction:column;gap:6px}
+.task-item{display:flex;align-items:center;gap:8px;padding:4px 0}
+.task-item input[type="checkbox"]{width:16px;height:16px;accent-color:var(--green);cursor:pointer;flex-shrink:0}
+.task-item .task-text{flex:1;font-size:.85rem}
+.task-item .task-text.done{text-decoration:line-through;color:var(--muted)}
+.task-item .task-delete{color:var(--muted);font-size:.7rem;opacity:0;transition:opacity .15s}
+.task-item:hover .task-delete{opacity:1}
+
+.add-task-row{display:flex;gap:6px;margin-top:8px}
+.add-task-row input{flex:1;font-size:.82rem}
+
+.stream-notes{margin-top:10px;font-size:.8rem;color:var(--subtext);font-style:italic}
+.stream-notes textarea{font-style:normal;width:100%;font-size:.8rem}
+
+.stream-progress{margin-top:10px;display:flex;align-items:center;gap:8px}
+.progress-bar{flex:1;height:6px;background:var(--surface1);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;border-radius:3px;transition:width .3s}
+.progress-fill.active{background:var(--blue)}
+.progress-fill.done{background:var(--green)}
+.progress-pct{font-size:.72rem;color:var(--muted);min-width:32px}
+
+.stream-actions{margin-top:10px;display:flex;gap:6px;justify-content:flex-end;opacity:0;transition:opacity .15s}
+.stream-card:hover .stream-actions{opacity:1}
+
+/* Goals section */
+.goals-section{margin-top:32px;background:var(--surface);border-radius:12px;padding:20px}
+.goals-section h3{font-size:.95rem;color:var(--teal);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.goal-item{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:.85rem}
+.goal-item .goal-num{color:var(--muted);font-weight:600;min-width:20px}
+.goal-item input{flex:1;font-size:.85rem}
+.goal-item .goal-delete{color:var(--muted);font-size:.7rem;opacity:0;transition:opacity .15s}
+.goal-item:hover .goal-delete{opacity:1}
+
+/* People section */
+.people-section{margin-top:16px;background:var(--surface);border-radius:12px;padding:20px}
+.people-section h3{font-size:.95rem;color:var(--peach);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.person-row{display:flex;gap:8px;align-items:center;padding:4px 0;font-size:.82rem}
+.person-row input{font-size:.82rem}
+.person-row .person-delete{color:var(--muted);font-size:.7rem;opacity:0;transition:opacity .15s}
+.person-row:hover .person-delete{opacity:1}
+
+/* Summary stats */
+.stats{display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.stat-card{background:var(--surface);border-radius:10px;padding:14px 20px;min-width:130px;text-align:center}
+.stat-card .num{font-size:1.8rem;font-weight:700}
+.stat-card .label{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.stat-card.active-stat .num{color:var(--red)}
+.stat-card.paused-stat .num{color:var(--yellow)}
+.stat-card.done-stat .num{color:var(--green)}
+.stat-card.tasks-stat .num{color:var(--blue)}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--surface);border:1px solid var(--surface1);border-radius:14px;padding:24px;max-width:500px;width:90%}
+.modal h2{color:var(--blue);margin-bottom:16px;font-size:1.1rem}
+.modal .form-group{margin-bottom:12px}
+.modal .form-group label{display:block;font-size:.75rem;color:var(--muted);margin-bottom:4px;text-transform:uppercase}
+.modal .form-group input,.modal .form-group select,.modal .form-group textarea{width:100%}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+
+/* Export preview */
+.export-preview{background:var(--mantle);border:1px solid var(--surface1);border-radius:8px;padding:16px;font-family:'Cascadia Code',Consolas,monospace;font-size:.8rem;white-space:pre-wrap;max-height:400px;overflow-y:auto;color:var(--subtext)}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📊 <span>Status Dashboard</span></h1>
+  <div class="header-actions">
+    <span class="last-update" id="lastUpdate"></span>
+    <button class="btn btn-outline" onclick="exportMarkdown()" title="Export to Markdown">📋 Export</button>
+    <button class="btn btn-outline" onclick="copyForTeams()" title="Copy for Teams">💬 Teams</button>
+    <button class="btn btn-primary" onclick="showAddStream()">+ Add Stream</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="stats" id="stats"></div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="all" onclick="switchTab('all')">All <span class="count" id="countAll">0</span></button>
+    <button class="tab" data-tab="active" onclick="switchTab('active')">🔴 Active <span class="count" id="countActive">0</span></button>
+    <button class="tab" data-tab="paused" onclick="switchTab('paused')">🟡 Paused <span class="count" id="countPaused">0</span></button>
+    <button class="tab" data-tab="done" onclick="switchTab('done')">✅ Done <span class="count" id="countDone">0</span></button>
+  </div>
+
+  <div class="streams" id="streams"></div>
+
+  <div class="goals-section" id="goalsSection"></div>
+  <div class="people-section" id="peopleSection"></div>
+</div>
+
+<!-- Add Stream Modal -->
+<div class="modal-overlay" id="addStreamModal">
+  <div class="modal">
+    <h2>➕ New Work Stream</h2>
+    <div class="form-group"><label>Title</label><input id="newTitle" placeholder="e.g., GCP Wizard UI Updates"></div>
+    <div class="form-group"><label>Repo</label><input id="newRepo" placeholder="e.g., FE.MSecSCC"></div>
+    <div class="form-group"><label>Status</label>
+      <select id="newStatus"><option value="active">🔴 Active</option><option value="paused">🟡 Paused</option></select>
+    </div>
+    <div class="form-group"><label>ETA</label><input id="newEta" type="date"></div>
+    <div class="form-group"><label>Owner</label><input id="newOwner" value="Oren"></div>
+    <div class="form-group"><label>Notes</label><textarea id="newNotes" rows="2"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('addStreamModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="addStream()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export Modal -->
+<div class="modal-overlay" id="exportModal">
+  <div class="modal" style="max-width:700px">
+    <h2>📋 Export</h2>
+    <pre class="export-preview" id="exportContent"></pre>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('exportModal')">Close</button>
+      <button class="btn btn-primary" onclick="copyExport()">📋 Copy to Clipboard</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let DATA = {streams:[], people:[], goals:[]};
+let currentTab = 'all';
+
+async function loadData() {
+  const r = await fetch('/api/data');
+  DATA = await r.json();
+  render();
+}
+
+function render() {
+  renderStats();
+  renderStreams();
+  renderGoals();
+  renderPeople();
+  updateCounts();
+  const lu = DATA.lastUpdated;
+  document.getElementById('lastUpdate').textContent = lu ? `Updated: ${new Date(lu).toLocaleString()}` : '';
+}
+
+function renderStats() {
+  const active = DATA.streams.filter(s=>s.status==='active').length;
+  const paused = DATA.streams.filter(s=>s.status==='paused').length;
+  const done = DATA.streams.filter(s=>s.status==='done').length;
+  const allTasks = DATA.streams.flatMap(s=>s.tasks||[]);
+  const doneTasks = allTasks.filter(t=>t.done).length;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card active-stat"><div class="num">${active}</div><div class="label">Active</div></div>
+    <div class="stat-card paused-stat"><div class="num">${paused}</div><div class="label">Paused</div></div>
+    <div class="stat-card done-stat"><div class="num">${done}</div><div class="label">Done</div></div>
+    <div class="stat-card tasks-stat"><div class="num">${doneTasks}/${allTasks.length}</div><div class="label">Tasks</div></div>
+  `;
+}
+
+function updateCounts() {
+  document.getElementById('countAll').textContent = DATA.streams.length;
+  document.getElementById('countActive').textContent = DATA.streams.filter(s=>s.status==='active').length;
+  document.getElementById('countPaused').textContent = DATA.streams.filter(s=>s.status==='paused').length;
+  document.getElementById('countDone').textContent = DATA.streams.filter(s=>s.status==='done').length;
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab===tab));
+  renderStreams();
+}
+
+function filteredStreams() {
+  if (currentTab === 'all') return DATA.streams;
+  return DATA.streams.filter(s => s.status === currentTab);
+}
+
+function renderStreams() {
+  const el = document.getElementById('streams');
+  const streams = filteredStreams();
+  if (!streams.length) {
+    el.innerHTML = `<div style="text-align:center;color:var(--muted);padding:40px">No work streams in this view</div>`;
+    return;
+  }
+  el.innerHTML = streams.map(s => {
+    const tasks = s.tasks || [];
+    const doneCount = tasks.filter(t=>t.done).length;
+    const pct = tasks.length ? Math.round(doneCount/tasks.length*100) : 0;
+    const pctClass = s.status === 'done' ? 'done' : 'active';
+
+    return `
+    <div class="stream-card" data-status="${s.status}" data-id="${s.id}">
+      <div class="stream-header">
+        <div class="stream-title">
+          <input value="${esc(s.title)}" onchange="updateField('${s.id}','title',this.value)">
+        </div>
+        <span class="status-badge ${s.status}" onclick="cycleStatus('${s.id}')">${s.status}</span>
+      </div>
+      <div class="stream-meta">
+        <div class="field"><label>Repo</label><input value="${esc(s.repo||'')}" onchange="updateField('${s.id}','repo',this.value)" style="width:180px"></div>
+        <div class="field"><label>Owner</label><input value="${esc(s.owner||'')}" onchange="updateField('${s.id}','owner',this.value)" style="width:100px"></div>
+        <div class="field"><label>Reviewer</label><input value="${esc(s.reviewer||'')}" onchange="updateField('${s.id}','reviewer',this.value)" style="width:100px"></div>
+        <div class="field"><label>ETA</label><input type="date" value="${s.eta||''}" onchange="updateField('${s.id}','eta',this.value)" style="width:140px"></div>
+      </div>
+      <div class="task-list">
+        ${tasks.map((t,i) => `
+          <div class="task-item">
+            <input type="checkbox" ${t.done?'checked':''} onchange="toggleTask('${s.id}',${i})">
+            <span class="task-text ${t.done?'done':''}">${esc(t.text)}</span>
+            <button class="task-delete btn-sm" onclick="deleteTask('${s.id}',${i})">✕</button>
+          </div>
+        `).join('')}
+      </div>
+      <div class="add-task-row">
+        <input placeholder="Add task..." onkeydown="if(event.key==='Enter'){addTask('${s.id}',this.value);this.value=''}">
+        <button class="btn btn-outline btn-sm" onclick="addTask('${s.id}',this.previousElementSibling.value);this.previousElementSibling.value=''">+</button>
+      </div>
+      ${tasks.length ? `
+        <div class="stream-progress">
+          <div class="progress-bar"><div class="progress-fill ${pctClass}" style="width:${pct}%"></div></div>
+          <span class="progress-pct">${pct}%</span>
+        </div>
+      ` : ''}
+      <div class="stream-notes">
+        <textarea placeholder="Notes..." onchange="updateField('${s.id}','notes',this.value)">${esc(s.notes||'')}</textarea>
+      </div>
+      <div class="stream-actions">
+        <button class="btn btn-danger btn-sm" onclick="deleteStream('${s.id}')">🗑 Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderGoals() {
+  const goals = DATA.goals || [];
+  document.getElementById('goalsSection').innerHTML = `
+    <h3>🎯 Current Goals</h3>
+    ${goals.map((g,i) => `
+      <div class="goal-item">
+        <span class="goal-num">${i+1}.</span>
+        <input value="${esc(g)}" onchange="updateGoal(${i},this.value)">
+        <button class="goal-delete" onclick="deleteGoal(${i})">✕</button>
+      </div>
+    `).join('')}
+    <div style="margin-top:8px">
+      <input placeholder="Add goal..." style="width:100%" onkeydown="if(event.key==='Enter'){addGoal(this.value);this.value=''}">
+    </div>
+  `;
+}
+
+function renderPeople() {
+  const people = DATA.people || [];
+  document.getElementById('peopleSection').innerHTML = `
+    <h3>👥 People & Dependencies</h3>
+    ${people.map((p,i) => `
+      <div class="person-row">
+        <input value="${esc(p.name)}" placeholder="Name" style="width:120px" onchange="updatePerson(${i},'name',this.value)">
+        <input value="${esc(p.role)}" placeholder="Role" style="width:260px" onchange="updatePerson(${i},'role',this.value)">
+        <input value="${esc(p.status)}" placeholder="Status" style="width:120px" onchange="updatePerson(${i},'status',this.value)">
+        <button class="person-delete" onclick="deletePerson(${i})">✕</button>
+      </div>
+    `).join('')}
+    <div style="margin-top:8px">
+      <button class="btn btn-outline btn-sm" onclick="addPerson()">+ Add Person</button>
+    </div>
+  `;
+}
+
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// API calls
+async function api(path, body) {
+  await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  await loadData();
+}
+
+function toggleTask(streamId, idx) { api('/api/toggle-task', {streamId, taskIndex:idx}); }
+function deleteTask(streamId, idx) { api('/api/delete-task', {streamId, taskIndex:idx}); }
+function addTask(streamId, text) { if(text.trim()) api('/api/add-task', {streamId, text:text.trim()}); }
+function deleteStream(id) { if(confirm('Delete this work stream?')) api('/api/delete-stream', {id}); }
+
+function updateField(id, key, value) {
+  const body = {id};
+  body[key] = value;
+  api('/api/update-stream', body);
+}
+
+function cycleStatus(id) {
+  const s = DATA.streams.find(x=>x.id===id);
+  if (!s) return;
+  const order = ['active','paused','done'];
+  const next = order[(order.indexOf(s.status)+1) % order.length];
+  api('/api/update-stream', {id, status:next});
+}
+
+function updateGoal(idx, value) {
+  DATA.goals[idx] = value;
+  api('/api/update-goals', {goals:DATA.goals});
+}
+function deleteGoal(idx) {
+  DATA.goals.splice(idx, 1);
+  api('/api/update-goals', {goals:DATA.goals});
+}
+function addGoal(text) {
+  if (text.trim()) {
+    DATA.goals.push(text.trim());
+    api('/api/update-goals', {goals:DATA.goals});
+  }
+}
+
+function updatePerson(idx, key, value) {
+  DATA.people[idx][key] = value;
+  api('/api/update-people', {people:DATA.people});
+}
+function deletePerson(idx) {
+  DATA.people.splice(idx, 1);
+  api('/api/update-people', {people:DATA.people});
+}
+function addPerson() {
+  DATA.people.push({name:'', role:'', status:'Active'});
+  api('/api/update-people', {people:DATA.people});
+}
+
+// Modal
+function showAddStream() { document.getElementById('addStreamModal').classList.add('show'); document.getElementById('newTitle').focus(); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+function addStream() {
+  const title = document.getElementById('newTitle').value.trim();
+  if (!title) return;
+  api('/api/add-stream', {
+    title,
+    repo: document.getElementById('newRepo').value.trim(),
+    status: document.getElementById('newStatus').value,
+    eta: document.getElementById('newEta').value,
+    owner: document.getElementById('newOwner').value.trim(),
+    notes: document.getElementById('newNotes').value.trim()
+  });
+  closeModal('addStreamModal');
+  ['newTitle','newRepo','newEta','newNotes'].forEach(id => document.getElementById(id).value = '');
+}
+
+// Export
+async function exportMarkdown() {
+  const r = await fetch('/api/export-markdown');
+  const md = await r.text();
+  document.getElementById('exportContent').textContent = md;
+  document.getElementById('exportModal').classList.add('show');
+}
+
+function copyExport() {
+  const text = document.getElementById('exportContent').textContent;
+  navigator.clipboard.writeText(text);
+  const btn = event.target;
+  btn.textContent = '✅ Copied!';
+  setTimeout(() => btn.textContent = '📋 Copy to Clipboard', 1500);
+}
+
+async function copyForTeams() {
+  const r = await fetch('/api/export-markdown');
+  const md = await r.text();
+  await navigator.clipboard.writeText(md);
+  const btn = event.target;
+  const orig = btn.textContent;
+  btn.textContent = '✅ Copied!';
+  setTimeout(() => btn.textContent = orig, 1500);
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
+  }
+  if (e.key === 'n' && e.ctrlKey) { e.preventDefault(); showAddStream(); }
+});
+
+// Init
+loadData();
+</script>
+</body>
+</html>

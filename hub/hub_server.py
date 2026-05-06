@@ -80,6 +80,18 @@ SERVER_COMMANDS = {
         "cmd": [sys.executable, "pr_reviewer_server.py", "--no-browser"],
         "health_path": "/api/health",
     },
+    "realestate-finder": {
+        "port": 8098,
+        "cwd": r"C:\Users\orenhorowitz\desktop-automations\realestate-finder",
+        "cmd": [sys.executable, "dashboard_server.py", "--no-browser"],
+        "health_path": "/api/health",
+    },
+    "status-dashboard": {
+        "port": 8099,
+        "cwd": r"C:\Users\orenhorowitz\desktop-automations\status-dashboard",
+        "cmd": [sys.executable, "status_dashboard.py", "--no-browser"],
+        "health_path": "/api/health",
+    },
 }
 
 child_processes = {}

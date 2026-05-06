@@ -1,0 +1,126 @@
+{
+  "lastUpdated": "2026-05-06T13:14:00+03:00",
+  "streams": [
+    {
+      "id": "gcp-wizard-ui",
+      "title": "GCP Connector Wizard UI",
+      "repo": "FE.MSecSCC",
+      "status": "active",
+      "eta": "2026-05-09",
+      "owner": "Oren",
+      "reviewer": "TBD",
+      "tasks": [
+        {"text": "Run ESLint on Step 3/4 changes", "done": false},
+        {"text": "Delete old Step 4 file from codebase", "done": false},
+        {"text": "Create PR and request review", "done": false},
+        {"text": "Merge + deploy to dev", "done": false}
+      ],
+      "blockers": [],
+      "notes": "Step 3 restructured (validate only), Step 4 review + completion components created"
+    },
+    {
+      "id": "azure-activate-closeout",
+      "title": "Azure ActivateConnector — Epic Closeout",
+      "repo": "Rome-Visionaries-Onboarding",
+      "status": "active",
+      "eta": "2026-05-07",
+      "owner": "Oren",
+      "reviewer": "",
+      "tasks": [
+        {"text": "Close Epic 37133008 in ADO", "done": false},
+        {"text": "Update ADO epic status + link prod E2E traces", "done": false},
+        {"text": "Remove workloadIdentityProviderId from FE ValidateConnector payload", "done": false}
+      ],
+      "blockers": [],
+      "notes": "E2E prod validation completed. Kusto traces confirmed."
+    },
+    {
+      "id": "aws-gcp-wizard-update",
+      "title": "AWS/GCP Connector Wizards — UI Updates",
+      "repo": "FE.MSecSCC",
+      "status": "active",
+      "eta": "2026-05-16",
+      "owner": "Oren",
+      "reviewer": "",
+      "tasks": [
+        {"text": "Update AWS UI wizard to call separate ActivateConnector", "done": false},
+        {"text": "Update GCP UI wizard to call separate ActivateConnector", "done": false},
+        {"text": "Add E2E test coverage for AWS/GCP activation flows", "done": false}
+      ],
+      "blockers": [],
+      "notes": "Backend endpoints already exist (PR #15102729). Follow Azure PR #15338077 pattern."
+    },
+    {
+      "id": "nuget-pending-activation",
+      "title": "NuGet Contracts — PendingActivation Enum",
+      "repo": "Rome-Visionaries-Nugets",
+      "status": "paused",
+      "eta": "",
+      "owner": "Oren",
+      "reviewer": "",
+      "tasks": [
+        {"text": "PendingActivation enum value added", "done": true}
+      ],
+      "blockers": [],
+      "notes": "Ready for consumption. Resume when AWS/GCP UI wizard work needs new contract mappings."
+    },
+    {
+      "id": "azure-activate-endpoint",
+      "title": "Azure ActivateConnector Endpoint",
+      "repo": "Rome-Visionaries-Onboarding",
+      "status": "done",
+      "eta": "",
+      "owner": "Oren",
+      "reviewer": "",
+      "tasks": [
+        {"text": "Implement separate POST ActivateConnector action", "done": true},
+        {"text": "Remove activation from ValidateConnector", "done": true},
+        {"text": "PR #15102729 merged", "done": true}
+      ],
+      "blockers": [],
+      "notes": "Completed 2026-05-03. All 3 PRs merged and validated in prod."
+    },
+    {
+      "id": "azure-ui-split",
+      "title": "Azure UI Wizard Split (Step 3/4)",
+      "repo": "FE.MSecSCC",
+      "status": "done",
+      "eta": "",
+      "owner": "Oren",
+      "reviewer": "",
+      "tasks": [
+        {"text": "Restructured Step 3 (ValidateConnector only)", "done": true},
+        {"text": "Created Step 4 (Review + ActivateConnector + Completion)", "done": true},
+        {"text": "PR #15338077 merged", "done": true}
+      ],
+      "blockers": [],
+      "notes": "Completed 2026-05-04."
+    },
+    {
+      "id": "e2e-prod-validation",
+      "title": "E2E Production Validation — Azure",
+      "repo": "Rome-Visionaries-Onboarding",
+      "status": "done",
+      "eta": "",
+      "owner": "Oren",
+      "reviewer": "",
+      "tasks": [
+        {"text": "Ran E2E tests against prod environment", "done": true},
+        {"text": "Validated ActivateConnector endpoint via Kusto traces", "done": true},
+        {"text": "Confirmed ValidateConnector no longer activates", "done": true}
+      ],
+      "blockers": [],
+      "notes": "Completed 2026-05-06. Traces confirmed full workflow success."
+    }
+  ],
+  "people": [
+    {"name": "Oren", "role": "Lead — Azure/AWS/GCP ActivateConnector", "status": "Active"},
+    {"name": "Code Reviewer", "role": "GCP UI PR review", "status": "Awaiting assignment"}
+  ],
+  "goals": [
+    "Ship GCP wizard update — This week",
+    "Close Azure Epic 37133008 — By 2026-05-07",
+    "Unblock AWS/GCP UI wizard ActivateConnector calls — By 2026-05-12",
+    "Validate AWS/GCP in prod — Week of 2026-05-12"
+  ]
+}
