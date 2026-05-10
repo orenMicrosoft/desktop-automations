@@ -105,7 +105,17 @@ def parse_pr_url(url):
             "pr_id": int(pr_id),
         }
 
-    raise ValueError(f"Could not parse PR URL: {url}")
+    # Detect common non-PR URLs and give a helpful message
+    if "/_wiki/" in url:
+        raise ValueError(f"This is a wiki URL, not a PR. Paste a pull request URL containing '/pullrequest/'. Got: {url}")
+    if "/_workitems/" in url or "/_queries/" in url:
+        raise ValueError(f"This is a work item URL, not a PR. Paste a pull request URL containing '/pullrequest/'. Got: {url}")
+    if "/_build/" in url or "/_release/" in url:
+        raise ValueError(f"This is a pipeline URL, not a PR. Paste a pull request URL containing '/pullrequest/'. Got: {url}")
+    raise ValueError(
+        f"Could not parse PR URL. Expected format: "
+        f"https://dev.azure.com/{{org}}/{{project}}/_git/{{repo}}/pullrequest/{{id}} — Got: {url}"
+    )
 
 
 def get_pr_info(org, project, repo_name, pr_id):
