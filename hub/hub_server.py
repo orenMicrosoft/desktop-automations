@@ -92,6 +92,12 @@ SERVER_COMMANDS = {
         "cmd": [sys.executable, "status_dashboard.py", "--no-browser"],
         "health_path": "/api/health",
     },
+    "cef-screen": {
+        "port": 8100,
+        "cwd": r"C:\Users\orenhorowitz\Code\CefScreen",
+        "cmd": [sys.executable, "-m", "cef_screener.web", "--no-browser"],
+        "health_path": "/api/health",
+    },
 }
 
 child_processes = {}

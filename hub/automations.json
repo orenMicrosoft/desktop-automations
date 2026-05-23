@@ -108,5 +108,16 @@
     "folder": "status-dashboard",
     "cmd": ["status_dashboard.py", "--no-browser"],
     "health_path": "/api/health"
+  },
+  {
+    "id": "cef-screen",
+    "name": "CEF Screener",
+    "description": "Multi-factor quantitative screener for U.S. Closed-End Funds — discount stats, NAV resilience, distribution sustainability, asymmetric scoring",
+    "schedule": "On demand (refresh from CEFConnect, daily preferred)",
+    "dashboard": "http://localhost:8100/",
+    "port": 8100,
+    "folder": "cef-screen",
+    "cmd": ["-m", "cef_screener.web", "--no-browser"],
+    "health_path": "/api/health"
   }
 ]

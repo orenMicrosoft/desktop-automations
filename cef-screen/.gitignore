@@ -1,0 +1,20 @@
+# Runtime data — never committed (per desktop-automations convention)
+positions.json
+cache.sqlite*
+*.sqlite-wal
+*.sqlite-shm
+sell_log.csv
+exclusions.yaml
+profiles/active.txt
+profiles/profile_*.yaml
+profiles/changes.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
