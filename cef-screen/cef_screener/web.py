@@ -133,6 +133,10 @@ form.cfg .actions { margin-top: 1rem; display: flex; gap: 0.5rem; }
 .lab-controls input[type=range] { width: 100%; }
 .placeholder { background: #161b22; padding: 1rem; border-left: 3px solid #8b949e;
        margin: 0.5rem 0; color: #8b949e; font-style: italic; }
+tr.row-link { cursor: pointer; }
+tr.row-link:hover { background: #21262d; }
+td.why { color: #8b949e; font-size: 0.85rem; max-width: 22rem;
+       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 """
 
 
@@ -189,21 +193,68 @@ def _label_css_class(label: str) -> str:
     return "label-watch"
 
 
+_TRAP_TIP = {
+    "CONFIRMED": "Distribution trap CONFIRMED — high ROC, weak coverage, "
+                 "NAV erosion. Avoid.",
+    "SUSPECT":   "Trap SUSPECTED — one or two warning signs. Investigate.",
+    "WATCH":     "On the watchlist — mild concern, not blocking.",
+    "OK":        "No trap signal.",
+}
+
+
+def _why_text(row: Any) -> str:
+    """One-line 'why' for the BUY table — trap reason, sparse note, or composite."""
+    reason = row.get("trap_reason")
+    if reason:
+        return str(reason)
+    if bool(row.get("sparse", False)):
+        return "limited history — score is provisional"
+    label = str(row.get("buy_label") or "")
+    if label.startswith("BUY-A"):
+        return "passes all screens with margin"
+    if label.startswith("BUY-B"):
+        return "passes screens but smaller margin"
+    if label.startswith("AVOID"):
+        return "distribution coverage looks unsustainable"
+    return "—"
+
+
+def _trap_tooltip(tier: str) -> str:
+    if not tier:
+        return ""
+    key = tier.strip().upper()
+    return _TRAP_TIP.get(key, "")
+
+
 _LEGEND_HTML = """
-<details class="legend">
-  <summary>What do these labels mean?</summary>
+<details class="legend" open>
+  <summary>What do these labels mean? (click rows for full details)</summary>
+  <p style="margin:0.5rem 0"><b>Buy label</b> — the bottom-line call combining the
+    composite score and the trap detector:</p>
   <ul>
-    <li><b class="label-buy-a">BUY-A</b> — high conviction; full screen passes
-      and the trap detector is quiet.</li>
-    <li><b class="label-buy-b">BUY-B</b> — worth a look; passes the gatekeeper
-      but with a smaller margin.</li>
-    <li><b class="label-watch">watchlist</b> / <b>trap suspected</b> —
-      something looks off; investigate before committing.</li>
+    <li><b class="label-buy-a">BUY-A (high conviction)</b> — composite ≥
+      tier-A threshold and the trap detector is quiet.</li>
+    <li><b class="label-buy-b">BUY-B (worth a look)</b> — composite is decent
+      but lower margin; sanity-check before sizing up.</li>
+    <li><b class="label-watch">watchlist · trap suspected</b> — something
+      looks off; investigate before committing.</li>
     <li><b class="label-avoid">AVOID — distribution trap</b> — distribution
-      coverage looks unsustainable.</li>
+      coverage looks unsustainable (see below).</li>
     <li><i>sparse data</i> — limited price/distribution history; treat the
       score as provisional.</li>
   </ul>
+  <p style="margin:0.75rem 0 0.25rem"><b>What is a "distribution trap"?</b></p>
+  <p style="margin:0">A CEF paying out more in distributions than its NAV can
+    sustain — typically funded by Return-of-Capital (ROC), eroding NAV. When the
+    music stops the distribution gets cut and price collapses. We classify:</p>
+  <ul style="margin-top:0.25rem">
+    <li><b>CONFIRMED</b> — high ROC + falling NAV + weak coverage. Avoid.</li>
+    <li><b>SUSPECT</b> — one or two warning signs.</li>
+    <li><b>WATCH</b> — mild concern; not blocking.</li>
+    <li><b>—</b> (or <b>OK</b>) — no trap signal.</li>
+  </ul>
+  <p style="margin:0.5rem 0 0" class="muted">Click a row to drill into the
+    full per-ticker breakdown.</p>
 </details>
 """
 
@@ -225,22 +276,28 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
         else:
             head = ("<tr><th>Ticker</th><th>Name</th><th>Category</th>"
                     "<th>Disc%</th><th>Z1Y</th><th>Composite</th>"
-                    "<th>Trap</th><th>Buy</th></tr>")
+                    "<th>Trap</th><th>Buy</th><th>Why?</th></tr>")
             body_rows = []
             for _, r in result.scored.iterrows():
                 label = str(r["buy_label"] or "")
                 cls = _label_css_class(label)
                 ticker = html.escape(str(r["ticker"]))
+                trap_tier = str(r.get("trap_tier", "") or "")
+                trap_tip = html.escape(_trap_tooltip(trap_tier))
+                why = html.escape(_why_text(r))
                 body_rows.append(
-                    f"<tr><td><a href='/inspect/{ticker}' style='color:#58a6ff'>"
+                    f"<tr class='row-link' onclick=\"window.location='/inspect/{ticker}'\">"
+                    f"<td><a href='/inspect/{ticker}' style='color:#58a6ff'>"
                     f"{ticker}</a></td>"
                     f"<td>{html.escape(str(r.get('name', '') or ''))}</td>"
                     f"<td>{html.escape(str(r.get('category_name', '') or ''))}</td>"
                     f"<td>{_format_pct(r.get('current_discount_pct'))}</td>"
                     f"<td>{_format_pct(r.get('z1'))}</td>"
                     f"<td>{_format_pct(r.get('composite'), 1)}</td>"
-                    f"<td>{html.escape(str(r.get('trap_tier', '') or ''))}</td>"
-                    f"<td class='{cls}'>{html.escape(label)}</td></tr>"
+                    f"<td title='{trap_tip}'>{html.escape(trap_tier)}</td>"
+                    f"<td class='{cls}' title='{html.escape(label)}'>"
+                    f"{html.escape(label)}</td>"
+                    f"<td class='why' title='{why}'>{why}</td></tr>"
                 )
             rows_html = ("<table>" + head + "".join(body_rows) + "</table>")
         snap = html.escape(str(result.snapshot_date or "—"))

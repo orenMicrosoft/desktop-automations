@@ -170,12 +170,30 @@ class TestBuyRoute:
             assert b"T01" in resp.data
             assert b"Suspect" in resp.data
             assert b"Fund 0" in resp.data
+            # New: "Why?" column header and a reason cell
+            assert b"Why?" in resp.data
+            assert b"ROC &gt; 50%" in resp.data    # trap_reason for T01 (escaped)
+            # New: rows are clickable
+            assert b"row-link" in resp.data
+            assert b"window.location" in resp.data
+            # New: legend includes the trap glossary
+            assert b"distribution trap" in resp.data
+            assert b"CONFIRMED" in resp.data
 
     def test_with_warnings(self, client):
         r = _make_run_result(warnings=["Snapshot is 48h old"])
         with patch.object(web.engine, "run_pipeline", return_value=r):
             resp = client.get("/")
             assert b"Snapshot is 48h old" in resp.data
+
+    def test_trap_tooltip_present(self, client):
+        # T01 has trap_tier=Suspect → tooltip should mention "SUSPECTED"
+        r = _make_run_result()
+        # Force trap_tier to a known canonical value to trigger the tooltip map
+        r.scored.loc[r.scored["ticker"] == "T01", "trap_tier"] = "SUSPECT"
+        with patch.object(web.engine, "run_pipeline", return_value=r):
+            resp = client.get("/")
+            assert b"SUSPECTED" in resp.data    # tooltip text
 
 
 # ---------------------------------------------------------------- SELL route
@@ -492,6 +510,67 @@ class TestLabelCssClass:
 
     def test_none(self):
         assert web._label_css_class(None) == "label-watch"
+
+
+# ---------------------------------------------------------------- _why_text
+class TestWhyText:
+    def test_uses_trap_reason_when_present(self):
+        row = {"trap_reason": "ROC > 50%", "sparse": False,
+               "buy_label": "BUY-B (worth a look)"}
+        assert web._why_text(row) == "ROC > 50%"
+
+    def test_sparse_takes_precedence_over_label(self):
+        row = {"trap_reason": None, "sparse": True,
+               "buy_label": "BUY-A (high conviction)"}
+        assert "provisional" in web._why_text(row)
+
+    def test_buy_a_default(self):
+        row = {"trap_reason": None, "sparse": False,
+               "buy_label": "BUY-A (high conviction)"}
+        assert "margin" in web._why_text(row)
+
+    def test_buy_b_default(self):
+        row = {"trap_reason": None, "sparse": False,
+               "buy_label": "BUY-B (worth a look)"}
+        assert "smaller margin" in web._why_text(row)
+
+    def test_avoid_default(self):
+        row = {"trap_reason": None, "sparse": False,
+               "buy_label": "AVOID — distribution trap"}
+        assert "unsustainable" in web._why_text(row)
+
+    def test_unknown_label_returns_dash(self):
+        row = {"trap_reason": None, "sparse": False, "buy_label": "watchlist"}
+        assert web._why_text(row) == "—"
+
+    def test_missing_label_returns_dash(self):
+        row = {"trap_reason": None, "sparse": False}
+        assert web._why_text(row) == "—"
+
+
+# ---------------------------------------------------------------- _trap_tooltip
+class TestTrapTooltip:
+    def test_confirmed(self):
+        assert "CONFIRMED" in web._trap_tooltip("CONFIRMED")
+
+    def test_suspect(self):
+        assert "SUSPECTED" in web._trap_tooltip("SUSPECT")
+
+    def test_watch(self):
+        assert "watchlist" in web._trap_tooltip("WATCH")
+
+    def test_ok(self):
+        assert "No trap" in web._trap_tooltip("OK")
+
+    def test_case_insensitive(self):
+        assert web._trap_tooltip("suspect") == web._trap_tooltip("SUSPECT")
+
+    def test_unknown_returns_empty(self):
+        assert web._trap_tooltip("Mystery") == ""
+
+    def test_empty_returns_empty(self):
+        assert web._trap_tooltip("") == ""
+        assert web._trap_tooltip(None) == ""
 
 
 # ---------------------------------------------------------------- create_app
