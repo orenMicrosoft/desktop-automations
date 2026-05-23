@@ -139,32 +139,36 @@ class TestTrapTier:
 # ---------------------------------------------------------------- buy_label
 class TestBuyLabel:
     def test_trap_confirmed_overrides(self):
-        assert rules.buy_label(95, "CONFIRMED") == "TRAP-CONFIRMED"
+        out = rules.buy_label(95, "CONFIRMED")
+        assert "AVOID" in out and "trap" in out.lower()
 
     def test_tier_a(self):
-        assert rules.buy_label(80, "OK") == "BUY-A"
+        out = rules.buy_label(80, "OK")
+        assert out.startswith("BUY-A")
 
     def test_tier_a_threshold_boundary(self):
-        assert rules.buy_label(config.BUY_TIER_A_MIN, "OK") == "BUY-A"
+        out = rules.buy_label(config.BUY_TIER_A_MIN, "OK")
+        assert out.startswith("BUY-A")
 
     def test_tier_b(self):
-        assert rules.buy_label(65, "OK") == "BUY-B"
+        out = rules.buy_label(65, "OK")
+        assert out.startswith("BUY-B")
 
     def test_avoid(self):
         assert rules.buy_label(40, "OK") == "AVOID"
 
     def test_suspect_overlay(self):
         out = rules.buy_label(80, "SUSPECT")
-        assert "BUY-A" in out and "TRAP-SUSPECT" in out
+        assert "BUY-A" in out and "trap suspected" in out
 
     def test_watch_overlay(self):
         out = rules.buy_label(65, "WATCH")
-        assert "BUY-B" in out and "WATCH" in out
+        assert "BUY-B" in out and "watchlist" in out
 
     def test_sparse_overlay(self):
         out = rules.buy_label(80, "OK", sparse=True)
-        assert "PROVISIONAL" in out
+        assert "sparse data" in out
 
     def test_multiple_overlays(self):
         out = rules.buy_label(65, "SUSPECT", sparse=True)
-        assert "TRAP-SUSPECT" in out and "PROVISIONAL" in out
+        assert "trap suspected" in out and "sparse data" in out

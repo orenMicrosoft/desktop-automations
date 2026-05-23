@@ -29,7 +29,7 @@ def passes_liquidity(row: Mapping) -> bool:
 # ---------------------------------------------------------------- gatekeeper
 def gatekeeper_top_n(
     universe_df: pd.DataFrame,
-    n: int = config.GATEKEEPER_SIZE,
+    n: int | None = None,
     sort_col: str = "z1",
 ) -> pd.DataFrame:
     """Liquidity-filter then rank by ``sort_col`` ascending → return top *n*.
@@ -37,6 +37,8 @@ def gatekeeper_top_n(
     Z-Score conventions: low (more negative) is better; we sort ascending and
     take the head. Funds missing ``sort_col`` are dropped from candidacy.
     """
+    if n is None:
+        n = config.GATEKEEPER_SIZE
     if universe_df.empty:
         return universe_df.head(0)
 
@@ -59,18 +61,31 @@ def evaluate_sell_triggers(
     z1: float | None,
     z3: float | None,
     return_pct: float | None,
-    sell_z1_hard: float = config.SELL_Z1_HARD,
-    sell_z1_mean_revert: float = config.SELL_Z1_MEAN_REVERT,
-    sell_z3_confirm: float = config.SELL_Z3_MEAN_REVERT_CONFIRM,
-    target_gain_pct: float = config.SELL_TARGET_GAIN_PCT,
-    stop_loss_pct: float = config.SELL_STOP_LOSS_PCT,
+    sell_z1_hard: float | None = None,
+    sell_z1_mean_revert: float | None = None,
+    sell_z3_confirm: float | None = None,
+    target_gain_pct: float | None = None,
+    stop_loss_pct: float | None = None,
 ) -> dict:
     """Run §5.7 sell-trigger taxonomy against one position.
 
     ``return_pct`` is a FRACTION (e.g., 0.12 = +12%, not 12).
     Returns ``{ 'triggers': [list of str], 'urgency': 0..3 }`` where:
       0 = HOLD, 1 = WATCH, 2 = REVIEW, 3 = SELL-NOW.
+
+    All threshold args default to ``None`` and resolve to the current
+    ``config.*`` value at call time, so runtime overrides take effect.
     """
+    if sell_z1_hard is None:
+        sell_z1_hard = config.SELL_Z1_HARD
+    if sell_z1_mean_revert is None:
+        sell_z1_mean_revert = config.SELL_Z1_MEAN_REVERT
+    if sell_z3_confirm is None:
+        sell_z3_confirm = config.SELL_Z3_MEAN_REVERT_CONFIRM
+    if target_gain_pct is None:
+        target_gain_pct = config.SELL_TARGET_GAIN_PCT
+    if stop_loss_pct is None:
+        stop_loss_pct = config.SELL_STOP_LOSS_PCT
     triggers: list[str] = []
     urgency = 0
 
@@ -127,23 +142,23 @@ def buy_label(composite: float, trap_tier: str, sparse: bool = False) -> str:
 
     Plan §5.6: TIER A ≥ 75 (high-conviction), TIER B 60–75 (review),
     TIER C < 60 (avoid). Trap CONFIRMED tags as TRAP overlay.
-    Sparse tags as PROVISIONAL.
+    Sparse data appends "(sparse data)" so users know coverage is incomplete.
     """
     if trap_tier == "CONFIRMED":
-        return "TRAP-CONFIRMED"
+        return "AVOID — distribution trap"
     if composite >= config.BUY_TIER_A_MIN:
-        base = "BUY-A"
+        base = "BUY-A (high conviction)"
     elif composite >= config.BUY_TIER_B_MIN:
-        base = "BUY-B"
+        base = "BUY-B (worth a look)"
     else:
         base = "AVOID"
 
     overlays: list[str] = []
     if trap_tier == "SUSPECT":
-        overlays.append("TRAP-SUSPECT")
+        overlays.append("trap suspected")
     elif trap_tier == "WATCH":
-        overlays.append("WATCH")
+        overlays.append("watchlist")
     if sparse:
-        overlays.append("PROVISIONAL")
+        overlays.append("sparse data")
 
     return base + ((" · " + " · ".join(overlays)) if overlays else "")

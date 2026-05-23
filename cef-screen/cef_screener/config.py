@@ -281,3 +281,154 @@ SNAPSHOT_TTL_HOURS              = 12     # DailyPricing snapshot
 DISTRIBUTION_REFRESH_DAYS       = 7      # weekly cadence (or Friday)
 PRICE_HISTORY_INCREMENTAL_DAYS  = 30     # use /1M; older gap → /1Y
 COLD_BACKFILL_HISTORY_YEARS     = 5      # distributionhistory cold range
+
+
+# =====================================================================
+# RUNTIME OVERRIDES (editable from /config tab)
+# =====================================================================
+# Keys that can be edited at runtime via the /config UI. Each entry:
+#   "key": (cast_callable, validator_callable_returning_bool)
+# The validator is applied AFTER cast; if it returns False the override is rejected.
+import json as _json    # noqa: E402
+import threading as _threading    # noqa: E402
+
+_OVERRIDES_LOCK = _threading.Lock()
+
+
+def _v_positive(x: float) -> bool:
+    return x > 0 and x == x and x != float("inf")
+
+
+def _v_nonneg(x: float) -> bool:
+    return x >= 0 and x == x and x != float("inf")
+
+
+def _v_negative(x: float) -> bool:
+    return x < 0 and x == x and x != float("-inf")
+
+
+def _v_0_to_1(x: float) -> bool:
+    return 0 < x <= 1
+
+
+def _v_pos_int(x: int) -> bool:
+    return isinstance(x, int) and x > 0
+
+
+def _v_weights_dict(x: dict) -> bool:
+    keys = {"s_disc", "s_res", "s_sust", "s_peer"}
+    if not isinstance(x, dict) or set(x.keys()) != keys:
+        return False
+    try:
+        vals = [float(x[k]) for k in keys]
+    except (TypeError, ValueError):
+        return False
+    return all(v >= 0 and v == v for v in vals) and sum(vals) > 0
+
+
+OVERRIDABLE: dict = {
+    "COMPOSITE_FACTOR_WEIGHTS": (dict, _v_weights_dict),
+    "PENALTY_BASE":              (float, _v_0_to_1),
+    "BUY_TIER_A_MIN":            (float, _v_nonneg),
+    "BUY_TIER_B_MIN":            (float, _v_nonneg),
+    "GATEKEEPER_SIZE":           (int,   _v_pos_int),
+    "SELL_Z1_HARD":              (float, _v_positive),
+    "SELL_Z1_MEAN_REVERT":       (float, _v_positive),
+    "SELL_Z3_MEAN_REVERT_CONFIRM": (float, _v_positive),
+    "SELL_TARGET_GAIN_PCT":      (float, _v_positive),
+    "SELL_STOP_LOSS_PCT":        (float, _v_negative),
+}
+
+
+def overrides_path() -> Path:
+    return cache_dir() / "config_overrides.json"
+
+
+def _default_value(key: str):
+    """Snapshot the original value for a key at module import time."""
+    return _DEFAULTS[key]
+
+
+_DEFAULTS = {key: globals()[key] for key in OVERRIDABLE}
+
+
+def load_overrides() -> dict:
+    """Read the overrides file. Returns ``{}`` on missing/corrupt file."""
+    path = overrides_path()
+    if not path.exists():
+        return {}
+    try:
+        data = _json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, _json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    clean: dict = {}
+    for key, raw in data.items():
+        if key not in OVERRIDABLE:
+            continue
+        cast, validator = OVERRIDABLE[key]
+        try:
+            value = cast(raw) if cast is not dict else dict(raw)
+        except (TypeError, ValueError):
+            continue
+        if not validator(value):
+            continue
+        clean[key] = value
+    return clean
+
+
+def save_overrides(new_values: dict) -> dict:
+    """Validate ``new_values``, merge with existing, write to disk, apply.
+
+    Returns the merged effective overrides dict. Bad values are silently
+    skipped (use ``effective_settings()`` to read what actually applied).
+    """
+    with _OVERRIDES_LOCK:
+        existing = load_overrides()
+        for key, raw in new_values.items():
+            if key not in OVERRIDABLE:
+                continue
+            cast, validator = OVERRIDABLE[key]
+            try:
+                value = cast(raw) if cast is not dict else dict(raw)
+            except (TypeError, ValueError):
+                continue
+            if not validator(value):
+                continue
+            existing[key] = value
+        path = overrides_path()
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(_json.dumps(existing, indent=2), encoding="utf-8")
+        tmp.replace(path)
+        _apply_overrides(existing)
+        return existing
+
+
+def reset_overrides() -> None:
+    """Delete the overrides file and restore module constants to defaults."""
+    with _OVERRIDES_LOCK:
+        p = overrides_path()
+        if p.exists():
+            p.unlink()
+        for key, default in _DEFAULTS.items():
+            # dict default: copy to avoid aliasing
+            globals()[key] = dict(default) if isinstance(default, dict) else default
+
+
+def _apply_overrides(overrides: dict) -> None:
+    """Mutate module-level constants in-place using the provided overrides."""
+    for key, default in _DEFAULTS.items():
+        if key in overrides:
+            globals()[key] = overrides[key]
+        else:
+            globals()[key] = dict(default) if isinstance(default, dict) else default
+
+
+def effective_settings() -> dict:
+    """Return the current effective value for every overridable key."""
+    return {key: globals()[key] for key in OVERRIDABLE}
+
+
+# Apply any persisted overrides on import.
+_apply_overrides(load_overrides())

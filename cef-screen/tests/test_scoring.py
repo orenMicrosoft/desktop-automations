@@ -270,6 +270,43 @@ class TestComposite:
                                 peer_penalty_gate=False)
         assert out["severity_peer"] == 0.0
 
+    def test_custom_weights_shift_score(self):
+        # All sub-scores high → no penalties. Heavy weight on s_disc reflects its value.
+        out = scoring.composite(
+            100, 80, 80, 80, z1=-1.0, current_discount_pct=10,
+            peer_penalty_gate=False,
+            weights={"s_disc": 1.0, "s_res": 0.0, "s_sust": 0.0, "s_peer": 0.0},
+        )
+        assert out["composite"] == 100.0
+        # Equal weights with same inputs → weighted mean of 100/80/80/80 = 85
+        out2 = scoring.composite(
+            100, 80, 80, 80, z1=-1.0, current_discount_pct=10,
+            peer_penalty_gate=False,
+            weights={"s_disc": 0.25, "s_res": 0.25, "s_sust": 0.25, "s_peer": 0.25},
+        )
+        assert out2["composite"] == 85.0
+
+    def test_unnormalised_weights_normalised(self):
+        out = scoring.composite(
+            100, 100, 100, 100, z1=-1.0, current_discount_pct=10,
+            peer_penalty_gate=False,
+            weights={"s_disc": 2, "s_res": 2, "s_sust": 2, "s_peer": 2},
+        )
+        assert out["composite"] == 100.0
+
+    def test_zero_sum_weights_fallback_to_equal(self):
+        out = scoring.composite(
+            80, 80, 80, 80, z1=-1.0, current_discount_pct=10,
+            peer_penalty_gate=False,
+            weights={"s_disc": 0, "s_res": 0, "s_sust": 0, "s_peer": 0},
+        )
+        assert out["composite"] == 80.0    # falls back to equal-weight
+
+    def test_custom_penalty_base(self):
+        out = scoring.composite(80, 80, 80, 80, z1=3.0, current_discount_pct=10,
+                                peer_penalty_gate=False, penalty_base=0.9)
+        assert abs(out["multiplier"] - 0.9 ** 2) < 0.001
+
 
 # ---------------------------------------------------------------- trap_classification
 class TestTrap:

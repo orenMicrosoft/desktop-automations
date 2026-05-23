@@ -225,8 +225,15 @@ def composite(
     z1: float | None,
     current_discount_pct: float | None,
     peer_penalty_gate: bool,
+    weights: dict | None = None,
+    penalty_base: float | None = None,
 ) -> dict:
-    """Linear-mean × 0.75 ** total_severity, with severity in raw metric space."""
+    """Weighted-mean × ``penalty_base ** total_severity``.
+
+    ``weights`` defaults to ``config.COMPOSITE_FACTOR_WEIGHTS`` at call time;
+    pass an explicit dict to override (used by the Lab what-if view).
+    Weights are normalised internally so any positive scale works.
+    """
 
     # Discount severity: max of Z-overbought and premium-territory breaches
     sev_z = 0.0 if z1 is None else max(0.0, (z1 - 1.0) / 1.0)
@@ -240,8 +247,20 @@ def composite(
                 if peer_penalty_gate else 0.0)
 
     total_severity = sev_disc + sev_res + sev_sust + sev_peer
-    multiplier = config.PENALTY_BASE ** total_severity
-    linear = (s_disc_v + s_res_v + s_sust_v + s_peer_v) / 4.0
+    base = penalty_base if penalty_base is not None else config.PENALTY_BASE
+    multiplier = base ** total_severity
+
+    w = weights if weights is not None else config.COMPOSITE_FACTOR_WEIGHTS
+    w_disc = max(0.0, float(w.get("s_disc", 0.25)))
+    w_res = max(0.0, float(w.get("s_res", 0.25)))
+    w_sust = max(0.0, float(w.get("s_sust", 0.25)))
+    w_peer = max(0.0, float(w.get("s_peer", 0.25)))
+    w_total = w_disc + w_res + w_sust + w_peer
+    if w_total <= 0:
+        w_disc = w_res = w_sust = w_peer = 0.25
+        w_total = 1.0
+    linear = ((s_disc_v * w_disc) + (s_res_v * w_res)
+              + (s_sust_v * w_sust) + (s_peer_v * w_peer)) / w_total
     return {
         "composite": round(linear * multiplier, 1),
         "linear_mean": round(linear, 2),

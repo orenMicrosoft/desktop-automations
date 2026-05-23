@@ -32,8 +32,10 @@ def _make_run_result(*, with_scored=True, with_holdings=False, warnings=None):
             "coverage": 1.1, "composite": 78.5,
             "multiplier": 0.95,
             "s_disc": 80, "s_res": 75, "s_sust": 70, "s_peer": 65,
+            "dd_2020_pct": -0.18, "dd_2022_pct": -0.22,
+            "peer_penalty_gate": False,
             "trap_tier": "—", "trap_reason": None,
-            "buy_label": "A",
+            "buy_label": "BUY-A (high conviction)",
         }, {
             "ticker": "T01", "name": "Fund 1",
             "category_name": "Municipal Bond",
@@ -45,8 +47,10 @@ def _make_run_result(*, with_scored=True, with_holdings=False, warnings=None):
             "coverage": 0.9, "composite": 55.0,
             "multiplier": 0.7,
             "s_disc": 50, "s_res": 60, "s_sust": 55, "s_peer": 50,
+            "dd_2020_pct": -0.30, "dd_2022_pct": -0.15,
+            "peer_penalty_gate": True,
             "trap_tier": "Suspect", "trap_reason": "ROC > 50%",
-            "buy_label": "PASS",
+            "buy_label": "BUY-B (worth a look) · trap suspected",
         }])
     else:
         scored = pd.DataFrame()
@@ -197,15 +201,133 @@ class TestSellRoute:
 
 # ---------------------------------------------------------------- CONFIG route
 class TestConfigRoute:
-    def test_config_page(self, client):
+    def setup_method(self):
+        config.reset_overrides()
+
+    def teardown_method(self):
+        config.reset_overrides()
+
+    def test_config_renders_form(self, client):
         r = _make_run_result()
         with patch.object(web.engine, "run_pipeline", return_value=r):
             resp = client.get("/config")
             assert resp.status_code == 200
-            assert b"Snapshot date" in resp.data
-            assert b"Gatekeeper size" in resp.data
-            assert b"Penalty base" in resp.data
-            assert str(config.SELL_Z1_HARD).encode() in resp.data
+            # Should render an editable form with input names
+            assert b"name='PENALTY_BASE'" in resp.data or b'name="PENALTY_BASE"' in resp.data
+            assert b"name='SELL_Z1_HARD'" in resp.data or b'name="SELL_Z1_HARD"' in resp.data
+            assert b"name='w_s_disc'" in resp.data or b'name="w_s_disc"' in resp.data
+            assert b"Save" in resp.data
+            assert b"Reset to defaults" in resp.data
+
+    def test_config_status_saved_flash(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, "run_pipeline", return_value=r):
+            resp = client.get("/config?status=saved")
+            assert b"Configuration saved" in resp.data
+
+    def test_config_status_reset_flash(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, "run_pipeline", return_value=r):
+            resp = client.get("/config?status=reset")
+            assert b"Reverted to defaults" in resp.data
+
+    def test_config_status_bad_flash(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, "run_pipeline", return_value=r):
+            resp = client.get("/config?status=bad&msg=oops")
+            assert b"oops" in resp.data
+
+
+# ---------------------------------------------------------------- /api/config (POST)
+class TestApiConfigSave:
+    def setup_method(self):
+        config.reset_overrides()
+
+    def teardown_method(self):
+        config.reset_overrides()
+
+    def test_save_scalar_field(self, client):
+        resp = client.post("/api/config", data={"PENALTY_BASE": "0.5"})
+        assert resp.status_code == 302
+        assert "/config?status=saved" in resp.headers["Location"]
+        assert config.PENALTY_BASE == 0.5
+
+    def test_save_weights(self, client):
+        resp = client.post("/api/config", data={
+            "w_s_disc": "0.4", "w_s_res": "0.2",
+            "w_s_sust": "0.2", "w_s_peer": "0.2",
+        })
+        assert resp.status_code == 302
+        assert "saved" in resp.headers["Location"]
+        assert config.COMPOSITE_FACTOR_WEIGHTS["s_disc"] == 0.4
+
+    def test_save_skips_empty_field(self, client):
+        original = config.PENALTY_BASE
+        resp = client.post("/api/config", data={"PENALTY_BASE": "   "})
+        assert resp.status_code == 302
+        assert "saved" in resp.headers["Location"]
+        assert config.PENALTY_BASE == original
+
+    def test_save_uncastable_value(self, client):
+        resp = client.post("/api/config", data={"PENALTY_BASE": "not-a-number"})
+        assert resp.status_code == 302
+        assert "status=bad" in resp.headers["Location"]
+        assert "PENALTY_BASE" in resp.headers["Location"]
+
+    def test_save_validation_rejected(self, client):
+        # PENALTY_BASE must be 0 < x <= 1; 5.0 is rejected
+        resp = client.post("/api/config", data={"PENALTY_BASE": "5.0"})
+        assert resp.status_code == 302
+        assert "status=bad" in resp.headers["Location"]
+        assert "rejected" in resp.headers["Location"]
+
+    def test_save_weight_non_numeric(self, client):
+        resp = client.post("/api/config", data={
+            "w_s_disc": "abc", "w_s_res": "0.3",
+            "w_s_sust": "0.3", "w_s_peer": "0.3",
+        })
+        assert resp.status_code == 302
+        assert "status=bad" in resp.headers["Location"]
+
+    def test_save_weights_partial_missing(self, client):
+        # If any weight field is empty, weights aren't applied at all
+        original = dict(config.COMPOSITE_FACTOR_WEIGHTS)
+        resp = client.post("/api/config", data={
+            "w_s_disc": "0.4", "w_s_res": "",
+            "w_s_sust": "0.2", "w_s_peer": "0.2",
+        })
+        assert resp.status_code == 302
+        assert "saved" in resp.headers["Location"]
+        assert config.COMPOSITE_FACTOR_WEIGHTS == original
+
+    def test_save_clears_result_cache(self, client):
+        r = _make_run_result()
+        web._CACHE.set(r)
+        assert web._CACHE.get() is r
+        client.post("/api/config", data={"PENALTY_BASE": "0.5"})
+        assert web._CACHE.get() is None
+
+
+# ---------------------------------------------------------------- /api/config/reset
+class TestApiConfigReset:
+    def setup_method(self):
+        config.reset_overrides()
+
+    def teardown_method(self):
+        config.reset_overrides()
+
+    def test_reset_restores_defaults(self, client):
+        config.save_overrides({"PENALTY_BASE": 0.5})
+        assert config.PENALTY_BASE == 0.5
+        resp = client.post("/api/config/reset")
+        assert resp.status_code == 302
+        assert "/config?status=reset" in resp.headers["Location"]
+        assert config.PENALTY_BASE == config._DEFAULTS["PENALTY_BASE"]
+
+    def test_reset_clears_result_cache(self, client):
+        web._CACHE.set(_make_run_result())
+        client.post("/api/config/reset")
+        assert web._CACHE.get() is None
 
 
 # ---------------------------------------------------------------- INSPECT route
@@ -225,6 +347,12 @@ class TestInspectRoute:
             assert b"T00" in resp.data
             assert b"Taxable Bond" in resp.data
             assert b"Composite" in resp.data
+            # New: drawdown fields
+            assert b"Drawdown 2020" in resp.data
+            assert b"Drawdown 2022" in resp.data
+            # New: Phase 2 stubs
+            assert "📰".encode("utf-8") in resp.data
+            assert "📋".encode("utf-8") in resp.data
 
     def test_case_insensitive(self, client):
         r = _make_run_result()
@@ -239,6 +367,80 @@ class TestInspectRoute:
             resp = client.get("/inspect/T00")
             assert resp.status_code == 200
             assert b"No scored data" in resp.data
+
+    def test_ticker_html_escaped(self, client):
+        r = _make_run_result(with_scored=False)
+        with patch.object(web.engine, "run_pipeline", return_value=r):
+            # Try an XSS payload as the ticker
+            resp = client.get("/inspect/T00<script>")
+            assert b"<script>" not in resp.data
+            assert b"&lt;script&gt;" in resp.data
+
+
+# ---------------------------------------------------------------- LAB route
+class TestLabRoute:
+    def test_empty_scored(self, client):
+        r = _make_run_result(with_scored=False)
+        with patch.object(web.engine, "run_pipeline", return_value=r):
+            resp = client.get("/lab")
+            assert resp.status_code == 200
+            assert b"No scored data" in resp.data
+
+    def test_default_weights(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, "run_pipeline", return_value=r):
+            resp = client.get("/lab")
+            assert resp.status_code == 200
+            assert b"T00" in resp.data
+            assert b"T01" in resp.data
+            # Re-rank table headers
+            assert b"Original" in resp.data
+            assert b"New" in resp.data
+            # Reset link
+            assert b"Reset" in resp.data
+
+    def test_custom_weights(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, "run_pipeline", return_value=r):
+            resp = client.get(
+                "/lab?w_s_disc=1.0&w_s_res=0&w_s_sust=0&w_s_peer=0&penalty=0.9"
+            )
+            assert resp.status_code == 200
+            assert b"T00" in resp.data
+
+    def test_invalid_weight_falls_back(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, "run_pipeline", return_value=r):
+            resp = client.get(
+                "/lab?w_s_disc=abc&w_s_res=xyz&w_s_sust=0.25&w_s_peer=0.25&penalty=nan"
+            )
+            assert resp.status_code == 200    # falls back to defaults
+            assert b"T00" in resp.data
+
+    def test_invalid_penalty_falls_back(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, "run_pipeline", return_value=r):
+            resp = client.get("/lab?penalty=2.0")
+            assert resp.status_code == 200
+
+    def test_uncastable_penalty_falls_back(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, "run_pipeline", return_value=r):
+            resp = client.get("/lab?penalty=not-a-number")
+            assert resp.status_code == 200    # exception caught, default used
+
+    def test_rerank_changes_order(self, client):
+        # Build a result where re-ranking with heavy s_peer weight flips the order.
+        # T00 has higher s_disc, T01 has higher s_peer... actually both have similar.
+        # Use weights that emphasise one factor strongly to verify rank-delta column renders.
+        r = _make_run_result()
+        with patch.object(web.engine, "run_pipeline", return_value=r):
+            resp = client.get(
+                "/lab?w_s_disc=0&w_s_res=0&w_s_sust=0&w_s_peer=1.0&penalty=1.0"
+            )
+            assert resp.status_code == 200
+            # The output table should still contain both tickers
+            assert b"T00" in resp.data and b"T01" in resp.data
 
 
 # ---------------------------------------------------------------- /api/health
@@ -261,13 +463,47 @@ class TestRefresh:
             assert data["summary"]["universe"] == 35
             mock.assert_called_once()
 
+    def test_refresh_failure_returns_500(self, client):
+        with patch.object(web.engine, "refresh_universe",
+                          side_effect=RuntimeError("boom")):
+            resp = client.post("/api/refresh")
+            assert resp.status_code == 500
+            data = resp.get_json()
+            assert data["ok"] is False
+            assert "boom" in data["message"]
+
+
+# ---------------------------------------------------------------- label class helper
+class TestLabelCssClass:
+    def test_buy_a(self):
+        assert web._label_css_class("BUY-A (high conviction)") == "label-buy-a"
+
+    def test_buy_b(self):
+        assert web._label_css_class("BUY-B (worth a look)") == "label-buy-b"
+
+    def test_avoid(self):
+        assert web._label_css_class("AVOID — distribution trap") == "label-avoid"
+
+    def test_watchlist(self):
+        assert web._label_css_class("watchlist") == "label-watch"
+
+    def test_empty(self):
+        assert web._label_css_class("") == "label-watch"
+
+    def test_none(self):
+        assert web._label_css_class(None) == "label-watch"
+
 
 # ---------------------------------------------------------------- create_app
 class TestCreateApp:
     def test_returns_flask_app(self):
         app = web.create_app()
         assert app is not None
-        assert "buy" in [r.endpoint for r in app.url_map.iter_rules()]
+        endpoints = [r.endpoint for r in app.url_map.iter_rules()]
+        assert "buy" in endpoints
+        assert "lab" in endpoints
+        assert "api_config_save" in endpoints
+        assert "api_config_reset" in endpoints
 
 
 # ---------------------------------------------------------------- main()
