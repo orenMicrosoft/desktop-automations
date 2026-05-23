@@ -479,7 +479,26 @@ class TestRefresh:
             data = resp.get_json()
             assert data["ok"] is True
             assert data["summary"]["universe"] == 35
-            mock.assert_called_once()
+            mock.assert_called_once_with(full=False)
+            assert "snapshot" in data["message"].lower()
+
+    def test_refresh_full_mode_passes_full_true(self, client):
+        with patch.object(web.engine, "refresh_universe",
+                          return_value={"universe": 35, "news": 7}) as mock:
+            resp = client.post("/api/refresh?mode=full")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["ok"] is True
+            assert data["summary"]["news"] == 7
+            mock.assert_called_once_with(full=True)
+            assert "full" in data["message"].lower()
+
+    def test_refresh_unknown_mode_treated_as_quick(self, client):
+        with patch.object(web.engine, "refresh_universe",
+                          return_value={"universe": 1}) as mock:
+            resp = client.post("/api/refresh?mode=banana")
+            assert resp.status_code == 200
+            mock.assert_called_once_with(full=False)
 
     def test_refresh_failure_returns_500(self, client):
         with patch.object(web.engine, "refresh_universe",
@@ -604,3 +623,161 @@ class TestMain:
             assert called["host"] == "0.0.0.0"
             assert called["port"] == 9999
             assert "opened" not in called   # --no-browser
+
+
+# ---------------------------------------------------------------- _present helper
+class TestPresent:
+    def test_none_is_absent(self):
+        assert web._present(None) is False
+
+    def test_nan_is_absent(self):
+        assert web._present(float('nan')) is False
+
+    def test_zero_is_present(self):
+        assert web._present(0) is True
+        assert web._present(0.0) is True
+
+    def test_strings_and_negatives_are_present(self):
+        assert web._present('x') is True
+        assert web._present(-1.5) is True
+
+
+# ---------------------------------------------------------------- data-completeness banner
+class TestDataCompletenessBanner:
+    def test_empty_dataframe_returns_blank(self):
+        assert web._data_completeness_banner(pd.DataFrame()) == ""
+
+    def test_none_returns_blank(self):
+        assert web._data_completeness_banner(None) == ""
+
+    def test_no_banner_when_majority_have_history(self):
+        df = pd.DataFrame([
+            {'nav_cagr_3y': 0.05, 'median_disc_5y': 7, 'dd_2020_pct': -0.2},
+            {'nav_cagr_3y': 0.04, 'median_disc_5y': 6, 'dd_2020_pct': -0.1},
+        ])
+        assert web._data_completeness_banner(df) == ""
+
+    def test_banner_shows_when_history_missing(self):
+        df = pd.DataFrame([
+            {'nav_cagr_3y': None, 'median_disc_5y': None, 'dd_2020_pct': None},
+            {'nav_cagr_3y': None, 'median_disc_5y': None, 'dd_2020_pct': None},
+            {'nav_cagr_3y': None, 'median_disc_5y': None, 'dd_2020_pct': None},
+        ])
+        out = web._data_completeness_banner(df)
+        assert "3 of 3" in out
+        assert "Full refresh" in out
+        assert "warn" in out
+
+    def test_no_banner_at_exactly_half(self):
+        # 1 of 2 = 50% — banner suppressed (have_history >= total * 0.5)
+        df = pd.DataFrame([
+            {'nav_cagr_3y': 0.05, 'median_disc_5y': None, 'dd_2020_pct': None},
+            {'nav_cagr_3y': None, 'median_disc_5y': None, 'dd_2020_pct': None},
+        ])
+        assert web._data_completeness_banner(df) == ""
+
+
+# ---------------------------------------------------------------- _news_html
+class TestNewsHtml:
+    def test_no_news_renders_placeholder(self):
+        with patch.object(web.news, 'fetch_headlines', return_value=[]):
+            out = web._news_html('PFL')
+        assert "No recent news" in out
+        assert "PFL" in out
+
+    def test_renders_headlines_with_escaping(self):
+        with patch.object(web.news, 'fetch_headlines', return_value=[
+            {'title': 'A & B <x>', 'link': 'http://a/1?x=1&y=2',
+             'published': 'today'},
+        ]):
+            out = web._news_html('PFL')
+        assert "A &amp; B &lt;x&gt;" in out
+        # link is HTML-escaped (& becomes &amp; even in attribute)
+        assert "http://a/1?x=1&amp;y=2" in out
+        assert "today" in out
+        assert "Recent news" in out
+
+    def test_missing_link_falls_back_to_hash(self):
+        with patch.object(web.news, 'fetch_headlines', return_value=[
+            {'title': 't', 'link': '', 'published': ''},
+        ]):
+            out = web._news_html('PFL')
+        assert "href='#'" in out
+
+
+# ---------------------------------------------------------------- nav buttons
+class TestNavButtons:
+    def test_two_refresh_buttons_in_nav(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, 'run_pipeline', return_value=r):
+            resp = client.get('/')
+        assert resp.status_code == 200
+        body = resp.data.decode('utf-8')
+        assert "Quick refresh" in body
+        assert "Full refresh" in body
+        assert "mode=full" in body  # button posts to the full endpoint
+
+
+# ---------------------------------------------------------------- BUY banner integration
+class TestBuyBanner:
+    def test_banner_appears_when_history_missing(self, client):
+        # Build a result where every row lacks per-ticker history
+        r = _make_run_result()
+        r.scored['nav_cagr_3y'] = None
+        r.scored['median_disc_5y'] = None
+        r.scored['dd_2020_pct'] = None
+        with patch.object(web.engine, 'run_pipeline', return_value=r):
+            resp = client.get('/')
+        body = resp.data.decode('utf-8')
+        assert "of 2 rows are missing" in body or "of 2" in body
+        assert "Full refresh" in body
+
+    def test_no_banner_when_history_present(self, client):
+        r = _make_run_result()    # default has nav_cagr_3y and dd_2020_pct
+        with patch.object(web.engine, 'run_pipeline', return_value=r):
+            resp = client.get('/')
+        body = resp.data.decode('utf-8')
+        assert "rows are missing per-ticker history" not in body
+
+
+# ---------------------------------------------------------------- /inspect news + banner
+class TestInspectNewsAndBanner:
+    def test_inspect_renders_news_block(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, 'run_pipeline', return_value=r), \
+             patch.object(web.news, 'fetch_headlines', return_value=[
+                 {'title': 'PIMCO declared distribution',
+                  'link': 'http://x/1', 'published': 'today'},
+             ]):
+            resp = client.get('/inspect/T00')
+        assert resp.status_code == 200
+        body = resp.data.decode('utf-8')
+        assert "PIMCO declared distribution" in body
+        assert "Recent news" in body
+
+    def test_inspect_renders_no_news_placeholder(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, 'run_pipeline', return_value=r), \
+             patch.object(web.news, 'fetch_headlines', return_value=[]):
+            resp = client.get('/inspect/T00')
+        body = resp.data.decode('utf-8')
+        assert "No recent news" in body
+
+    def test_inspect_shows_no_history_banner(self, client):
+        r = _make_run_result()
+        # T00 lacks history
+        r.scored.loc[r.scored['ticker'] == 'T00', 'nav_cagr_3y'] = None
+        r.scored.loc[r.scored['ticker'] == 'T00', 'dd_2020_pct'] = None
+        with patch.object(web.engine, 'run_pipeline', return_value=r), \
+             patch.object(web.news, 'fetch_headlines', return_value=[]):
+            resp = client.get('/inspect/T00')
+        body = resp.data.decode('utf-8')
+        assert "No per-ticker history cached" in body
+
+    def test_inspect_no_history_banner_when_data_present(self, client):
+        r = _make_run_result()    # T00 has nav_cagr_3y=0.05, dd_2020_pct=-0.18
+        with patch.object(web.engine, 'run_pipeline', return_value=r), \
+             patch.object(web.news, 'fetch_headlines', return_value=[]):
+            resp = client.get('/inspect/T00')
+        body = resp.data.decode('utf-8')
+        assert "No per-ticker history cached" not in body

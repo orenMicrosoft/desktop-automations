@@ -559,3 +559,91 @@ def test_cache_stats_populated(initialised_cache, mock_universe, mock_price_hist
     assert s["universe_snapshot"] == len(mock_universe)
     assert s["price_history"] == len(mock_price_history_rows)
     assert s["latest_snapshot"] == "2026-05-22"
+
+
+# ---------------------------------------------------------------- news cache
+class TestNewsCache:
+    def test_write_and_load_roundtrip(self, initialised_cache):
+        items = [
+            {"title": "first", "link": "http://x/1", "published": "2025-05-01"},
+            {"title": "second", "link": "http://x/2", "published": "2025-05-02"},
+        ]
+        n = cache.write_news("PFL", items)
+        assert n == 2
+        out = cache.load_news("PFL")
+        assert out is not None
+        assert [o["title"] for o in out] == ["first", "second"]
+        assert out[0]["link"] == "http://x/1"
+
+    def test_load_returns_none_when_no_rows(self, initialised_cache):
+        assert cache.load_news("ZZZ") is None
+
+    def test_load_returns_none_when_stale(self, initialised_cache, monkeypatch):
+        cache.write_news("PFL", [{"title": "old"}])
+        # Force the row's fetched_at far in the past
+        from cef_screener.cache import connect
+        from datetime import datetime, timedelta
+        old = (datetime.utcnow() - timedelta(hours=5)).isoformat(timespec="seconds")
+        with connect() as conn:
+            conn.execute("UPDATE news_headlines SET fetched_at=? WHERE ticker=?",
+                         (old, "PFL"))
+            conn.commit()
+        # Stale → None
+        assert cache.load_news("PFL", max_age_seconds=3600) is None
+        # But still readable with a generous TTL
+        assert cache.load_news("PFL", max_age_seconds=999999) is not None
+
+    def test_load_returns_none_on_unparseable_fetched_at(self, initialised_cache):
+        cache.write_news("PFL", [{"title": "x"}])
+        from cef_screener.cache import connect
+        with connect() as conn:
+            conn.execute("UPDATE news_headlines SET fetched_at=? WHERE ticker=?",
+                         ("not-a-date", "PFL"))
+            conn.commit()
+        assert cache.load_news("PFL") is None
+
+    def test_write_replaces_existing(self, initialised_cache):
+        cache.write_news("PFL", [{"title": "a"}, {"title": "b"}])
+        cache.write_news("PFL", [{"title": "c"}])
+        out = cache.load_news("PFL")
+        assert [o["title"] for o in out] == ["c"]
+
+    def test_write_filters_empty_titles(self, initialised_cache):
+        n = cache.write_news("PFL", [
+            {"title": ""},
+            {"title": "   "},
+            {"title": "ok"},
+            {},
+        ])
+        assert n == 1
+        out = cache.load_news("PFL")
+        assert [o["title"] for o in out] == ["ok"]
+
+    def test_write_with_all_empty_titles_writes_nothing(self, initialised_cache):
+        n = cache.write_news("PFL", [{"title": ""}, {}])
+        assert n == 0
+        assert cache.load_news("PFL") is None
+
+    def test_write_empty_ticker_returns_zero(self, initialised_cache):
+        assert cache.write_news("", [{"title": "x"}]) == 0
+        assert cache.write_news("   ", [{"title": "x"}]) == 0
+
+    def test_load_empty_ticker_returns_none(self, initialised_cache):
+        assert cache.load_news("") is None
+        assert cache.load_news("   ") is None
+
+    def test_ensure_news_table_idempotent(self, initialised_cache):
+        # Calling _ensure_news_table multiple times should not fail
+        from cef_screener.cache import connect
+        with connect() as conn:
+            cache._ensure_news_table(conn)
+            cache._ensure_news_table(conn)
+            cache._ensure_news_table(conn)
+        # And we can still write/read
+        assert cache.write_news("PFL", [{"title": "z"}]) == 1
+
+    def test_ticker_normalised_to_uppercase(self, initialised_cache):
+        cache.write_news(" pfl ", [{"title": "ok"}])
+        out = cache.load_news("PFL")
+        assert out is not None and out[0]["title"] == "ok"
+

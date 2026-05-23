@@ -295,7 +295,7 @@ def trap_classification(
 
     if composition_quality != "full":
         return {"suspect": False, "confirmed": False, "watch": False,
-                "reason": "incomplete composition"}
+                "reason": None}
 
     suspect_reasons: list[str] = []
     if roc_pct_12m is not None and roc_pct_12m > 0.40 and (nav_cagr_3y or 0) < 0:

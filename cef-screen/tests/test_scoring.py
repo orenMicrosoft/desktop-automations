@@ -329,6 +329,9 @@ class TestTrap:
             composition_quality="incomplete", distribution_history_years=5,
         )
         assert not out["suspect"] and not out["confirmed"]
+        # Reason should be None — composition gaps are a data-quality issue,
+        # not a finding the user should treat as a warning.
+        assert out["reason"] is None
 
     def test_destructive_roc_outright(self):
         out = scoring.trap_classification(

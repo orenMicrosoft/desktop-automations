@@ -23,7 +23,7 @@ from . import config, ingest
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2  # bumps with every breaking schema change
+SCHEMA_VERSION = 3  # bumps with every breaking schema change
 
 # =====================================================================
 # Schema (plan §4.1)
@@ -127,6 +127,16 @@ CREATE TABLE IF NOT EXISTS fetch_meta (
     full_backfill_at  TEXT,
     history_years     REAL,
     PRIMARY KEY (ticker, series_type)
+);
+
+CREATE TABLE IF NOT EXISTS news_headlines (
+    ticker       TEXT NOT NULL,
+    fetched_at   TEXT NOT NULL,
+    idx          INTEGER NOT NULL,
+    title        TEXT NOT NULL,
+    link         TEXT,
+    published    TEXT,
+    PRIMARY KEY (ticker, idx)
 );
 
 CREATE TABLE IF NOT EXISTS schema_version (v INTEGER NOT NULL);
@@ -542,6 +552,83 @@ def fetch_meta_row(ticker: str, series_type: str) -> dict | None:
             (ticker, series_type),
         ).fetchone()
     return dict(row) if row else None
+
+
+# =====================================================================
+# News headlines (plan §11 — Phase 2 visibility)
+# =====================================================================
+_NEWS_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS news_headlines (
+    ticker       TEXT NOT NULL,
+    fetched_at   TEXT NOT NULL,
+    idx          INTEGER NOT NULL,
+    title        TEXT NOT NULL,
+    link         TEXT,
+    published    TEXT,
+    PRIMARY KEY (ticker, idx)
+)
+"""
+
+
+def _ensure_news_table(conn: sqlite3.Connection) -> None:
+    """Idempotent: create news_headlines if a legacy DB is missing it."""
+    conn.execute(_NEWS_TABLE_DDL)
+
+
+def load_news(ticker: str, *, max_age_seconds: int = 3600) -> list[dict] | None:
+    """Return cached headlines or ``None`` if missing/stale.
+
+    Stale = newest ``fetched_at`` older than ``max_age_seconds``.
+    """
+    ticker_u = (ticker or "").strip().upper()
+    if not ticker_u:
+        return None
+    with connect() as conn:
+        _ensure_news_table(conn)
+        rows = conn.execute(
+            "SELECT fetched_at, title, link, published FROM news_headlines "
+            "WHERE ticker = ? ORDER BY idx",
+            (ticker_u,),
+        ).fetchall()
+    if not rows:
+        return None
+    fetched = rows[0]["fetched_at"]
+    try:
+        fetched_dt = datetime.fromisoformat(fetched)
+    except (TypeError, ValueError):
+        return None
+    age = (datetime.utcnow() - fetched_dt).total_seconds()
+    if age > max_age_seconds:
+        return None
+    return [{"title": r["title"], "link": r["link"], "published": r["published"]}
+            for r in rows]
+
+
+def write_news(ticker: str, items: list[dict]) -> int:
+    """Replace cached headlines for ``ticker`` with the provided list."""
+    ticker_u = (ticker or "").strip().upper()
+    if not ticker_u:
+        return 0
+    now_iso = datetime.utcnow().isoformat(timespec="seconds")
+    with connect() as conn:
+        _ensure_news_table(conn)
+        conn.execute("DELETE FROM news_headlines WHERE ticker = ?", (ticker_u,))
+        rows = [
+            (ticker_u, now_iso, i,
+             (it.get("title") or "").strip(),
+             (it.get("link") or "").strip() or None,
+             (it.get("published") or "").strip() or None)
+            for i, it in enumerate(items)
+            if (it.get("title") or "").strip()
+        ]
+        if rows:
+            conn.executemany(
+                "INSERT INTO news_headlines "
+                "(ticker, fetched_at, idx, title, link, published) "
+                "VALUES (?, ?, ?, ?, ?, ?)", rows,
+            )
+        conn.commit()
+    return len(rows)
 
 
 # =====================================================================

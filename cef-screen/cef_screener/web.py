@@ -26,7 +26,7 @@ from typing import Any
 import pandas as pd
 from flask import Flask, Response, jsonify, redirect, render_template_string, request
 
-from . import config, engine, cache, portfolio, scoring
+from . import config, engine, cache, portfolio, scoring, news
 
 
 CACHE_TTL_SECONDS = 5 * 60   # 5 minutes
@@ -147,13 +147,24 @@ _NAV = """
   <a href="/lab">LAB</a>
   <a href="/config">CONFIG</a>
   <span class="spacer"></span>
-  <button id="refresh-btn" type="button"
+  <button id="quick-refresh-btn" type="button" title="Re-fetch only the universe snapshot (~5s)"
     onclick="(function(b){b.disabled=true;b.innerHTML='Refreshing&hellip;<span class=spinner></span>';
       fetch('/api/refresh',{method:'POST'}).then(r=>r.json()).then(j=>{
-        b.innerHTML = j.ok ? '✓ refreshed' : ('✗ ' + (j.message||'failed'));
+        b.innerHTML = j.ok ? '✓ snapshot refreshed' : ('✗ ' + (j.message||'failed'));
         setTimeout(()=>location.reload(), 600);
       }).catch(e=>{b.innerHTML='✗ error';b.disabled=false;});
-    })(this)">Refresh snapshot</button>
+    })(this)">Quick refresh</button>
+  <button id="full-refresh-btn" type="button"
+    title="Re-fetch universe + per-ticker history + news for the gatekeeper top-N (~1-3 min)"
+    onclick="(function(b){b.disabled=true;b.innerHTML='Full refresh&hellip;<span class=spinner></span>';
+      fetch('/api/refresh?mode=full',{method:'POST'}).then(r=>r.json()).then(j=>{
+        if(j.ok){
+          var s=j.summary||{};
+          b.innerHTML='✓ '+ (s.price_history||0)+' price · '+(s.news||0)+' news';
+        } else { b.innerHTML='✗ ' + (j.message||'failed'); }
+        setTimeout(()=>location.reload(), 900);
+      }).catch(e=>{b.innerHTML='✗ error';b.disabled=false;});
+    })(this)">Full refresh</button>
 </nav>
 """
 
@@ -224,6 +235,60 @@ def _trap_tooltip(tier: str) -> str:
         return ""
     key = tier.strip().upper()
     return _TRAP_TIP.get(key, "")
+
+
+def _data_completeness_banner(scored: pd.DataFrame) -> str:
+    """Big yellow warning if most rows are missing per-ticker history."""
+    if scored is None or scored.empty:
+        return ""
+    cols_to_check = ("nav_cagr_3y", "median_disc_5y", "dd_2020_pct")
+    have_history = 0
+    for _, row in scored.iterrows():
+        if any(_present(row.get(c)) for c in cols_to_check):
+            have_history += 1
+    total = len(scored)
+    if have_history >= total * 0.5:
+        return ""    # at least half the rows have real data
+    missing = total - have_history
+    return (
+        f"<div class='warn'>⚠️ <b>{missing} of {total}</b> rows are missing "
+        f"per-ticker history (NAV CAGR, 5Y median discount, crisis drawdowns) "
+        f"— composite scores are placeholders. Click <b>Full refresh</b> in "
+        f"the top-right to fetch this data from CEFConnect (~1-3 minutes).</div>"
+    )
+
+
+def _present(v: Any) -> bool:
+    if v is None:
+        return False
+    if isinstance(v, float) and v != v:    # NaN
+        return False
+    return True
+
+
+def _news_html(ticker: str) -> str:
+    """Render up to 5 cached/fetched headlines for a ticker as an HTML block."""
+    try:
+        items = news.fetch_headlines(ticker)
+    except Exception as e:    # pragma: no cover - defensive
+        return (f"<div class='placeholder'>News fetch failed: "
+                f"{html.escape(str(e))}</div>")
+    if not items:
+        return ("<div class='placeholder'>📰 No recent news headlines for "
+                f"<code>{html.escape(ticker)}</code>.</div>")
+    rows = []
+    for it in items:
+        title = html.escape(it.get("title", ""))
+        link = it.get("link", "") or "#"
+        link_safe = html.escape(link, quote=True)
+        pub = html.escape(it.get("published", "") or "")
+        rows.append(
+            f"<li><a href='{link_safe}' target='_blank' rel='noopener' "
+            f"style='color:#58a6ff'>{title}</a>"
+            f"<div class='muted' style='font-size:0.8rem'>{pub}</div></li>"
+        )
+    return ("<h3>📰 Recent news</h3><ul style='padding-left:1.2rem'>"
+            + "".join(rows) + "</ul>")
 
 
 _LEGEND_HTML = """
@@ -301,10 +366,12 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
                 )
             rows_html = ("<table>" + head + "".join(body_rows) + "</table>")
         snap = html.escape(str(result.snapshot_date or "—"))
+        data_banner = _data_completeness_banner(result.scored)
         body = (f"<p>Snapshot: <b>{snap}</b> · "
                 f"Universe: {result.universe_size} · "
                 f"Liquid: {result.liquid_universe_size}</p>"
                 f"{_warnings_html(result.warnings)}"
+                f"{data_banner}"
                 f"{_LEGEND_HTML}{rows_html}")
         return _layout("BUY", body)
 
@@ -475,17 +542,27 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
             f"<b>{html.escape(str(k))}</b><span>{html.escape(str(v))}</span>"
             for k, v in kvs
         )
+        # If we have no price history, surface a clear hint right at the top.
+        history_banner = ""
+        if not _present(r.get("nav_cagr_3y")) and not _present(r.get("dd_2020_pct")):
+            history_banner = (
+                f"<div class='warn'>📡 No per-ticker history cached for "
+                f"<code>{html.escape(ticker.upper())}</code>. The composite "
+                f"score is a placeholder — click <b>Full refresh</b> above "
+                f"to fetch this fund's price/discount/distribution history.</div>"
+            )
+        news_block = _news_html(ticker.upper())
         phase2 = (
             "<h3>Phase 2 (coming soon)</h3>"
-            "<div class='placeholder'>📰 News feed — RSS &amp; SEC EDGAR 8-K headlines "
-            "for this ticker.</div>"
-            "<div class='placeholder'>📋 Past status — how this ticker's score has "
-            "drifted over time.</div>"
-            "<div class='placeholder'>📉 Live performance through future drawdowns.</div>"
+            "<div class='placeholder'>📋 Past status — how this ticker's score "
+            "has drifted over time.</div>"
+            "<div class='placeholder'>📉 Live performance through future "
+            "drawdowns.</div>"
         )
         return _layout(
             f"Inspect {ticker.upper()}",
-            f"<div class='kv'>{rows}</div>{phase2}",
+            f"{history_banner}<div class='kv'>{rows}</div>"
+            f"{news_block}{phase2}",
         )
 
     @app.route("/lab")
@@ -578,11 +655,13 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
 
     @app.route("/api/refresh", methods=["POST"])
     def api_refresh():
+        mode = request.args.get("mode", "quick").strip().lower()
+        full = (mode == "full")
         try:
-            summary = engine.refresh_universe()
+            summary = engine.refresh_universe(full=full)
             _CACHE.clear()
-            return jsonify({"ok": True, "message": "Refresh complete",
-                            "summary": summary})
+            msg = "Full refresh complete" if full else "Snapshot refresh complete"
+            return jsonify({"ok": True, "message": msg, "summary": summary})
         except Exception as e:
             return jsonify({"ok": False, "message": str(e)}), 500
 

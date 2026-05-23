@@ -337,3 +337,61 @@ class TestRefreshUniverse:
         assert summary["price_history"] == 0
         assert summary["discount_history"] == 0
         assert summary["distribution_history"] == 0
+
+    def test_full_refresh_autopicks_tickers(self, initialised_cache, monkeypatch):
+        rows = _seed_universe()
+        ph, dh, dx = _seed_history_for("T00")
+        seen_tickers: list[str] = []
+        monkeypatch.setattr(engine.ingest, "fetch_universe", lambda: rows)
+        monkeypatch.setattr(engine.ingest, "fetch_price_history",
+                            lambda tkr: (seen_tickers.append(tkr), ph)[1])
+        monkeypatch.setattr(engine.ingest, "fetch_discount_history",
+                            lambda tkr: dh)
+        monkeypatch.setattr(engine.ingest, "fetch_distribution_history",
+                            lambda tkr: dx)
+        # Patch the news module that engine imports lazily, then call full=True
+        from cef_screener import news as news_mod
+        monkeypatch.setattr(
+            news_mod, "fetch_headlines",
+            lambda tkr, *, force_refresh=False, max_items=5: [
+                {"title": f"h-{tkr}", "link": "x", "published": ""},
+            ],
+        )
+        summary = engine.refresh_universe(full=True)
+        # The full path should pick gatekeeper tickers (at least one)
+        assert summary["universe"] == len(rows)
+        assert summary["price_history"] > 0
+        assert summary["news"] >= 1
+        assert len(seen_tickers) > 0
+
+    def test_full_refresh_empty_universe_skips_tickers(
+            self, initialised_cache, monkeypatch):
+        # Fetch returns an empty list → no tickers selected, no per-ticker loop
+        monkeypatch.setattr(engine.ingest, "fetch_universe", lambda: [])
+        called = {"ph": 0}
+        def _ph(tkr):
+            called["ph"] += 1
+            return []
+        monkeypatch.setattr(engine.ingest, "fetch_price_history", _ph)
+        with pytest.raises(ValueError):
+            # write_universe will raise on empty input; that's fine — we just
+            # need to confirm we never reach the per-ticker loop.
+            engine.refresh_universe(full=True)
+        assert called["ph"] == 0
+
+    def test_full_refresh_with_explicit_tickers_skips_autopick(
+            self, initialised_cache, monkeypatch):
+        rows = _seed_universe()
+        ph, dh, dx = _seed_history_for("T00")
+        monkeypatch.setattr(engine.ingest, "fetch_universe", lambda: rows)
+        monkeypatch.setattr(engine.ingest, "fetch_price_history", lambda tkr: ph)
+        monkeypatch.setattr(engine.ingest, "fetch_discount_history", lambda tkr: dh)
+        monkeypatch.setattr(engine.ingest, "fetch_distribution_history",
+                            lambda tkr: dx)
+        from cef_screener import news as news_mod
+        monkeypatch.setattr(news_mod, "fetch_headlines",
+                            lambda tkr, *, force_refresh=False, max_items=5: [])
+        summary = engine.refresh_universe(full=True, tickers=["T00"])
+        # Explicit tickers list bypasses the autopick path; T00 history fetched.
+        assert summary["price_history"] == len(ph)
+        assert summary["news"] == 0

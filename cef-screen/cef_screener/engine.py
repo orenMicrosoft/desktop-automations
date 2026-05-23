@@ -284,19 +284,36 @@ def run_pipeline(*, positions_path=None) -> RunResult:
     )
 
 
-def refresh_universe(*, tickers: list[str] | None = None) -> dict:
-    """Fetch universe + per-ticker histories from CEFConnect and write to cache.
+def refresh_universe(*, tickers: list[str] | None = None,
+                     full: bool = False) -> dict:
+    """Fetch universe + (optionally) per-ticker histories from CEFConnect.
 
-    If ``tickers`` is None, only the universe snapshot is refreshed (fast path).
-    Returns a summary dict with counts for use by the web/CLI layers.
+    - ``tickers`` is ``None`` and ``full=False`` → fast path: only the
+      universe snapshot is refreshed.
+    - ``tickers`` is ``None`` and ``full=True`` → fetch the universe, then
+      auto-select the gatekeeper top-N (lowest 1Y z-score among liquid
+      tickers) and fetch per-ticker histories + news for those.
+    - ``tickers`` is a list → fetch universe + per-ticker histories + news
+      for exactly those tickers.
+
+    Returns a summary dict with row counts for the web/CLI layers.
     """
     universe_rows = ingest.fetch_universe()
     cache.write_universe(universe_rows)
     summary: dict[str, int] = {"universe": len(universe_rows),
                                "price_history": 0,
                                "discount_history": 0,
-                               "distribution_history": 0}
+                               "distribution_history": 0,
+                               "news": 0}
+    if full and not tickers:
+        u = cache.load_latest_universe()
+        if not u.empty:
+            liquid = u[u.apply(rules.passes_liquidity, axis=1)]
+            gate = rules.gatekeeper_top_n(liquid, n=config.GATEKEEPER_SIZE,
+                                          sort_col="z_score_1yr")
+            tickers = list(gate["ticker"])
     if tickers:
+        from . import news as news_module
         for tkr in tickers:
             try:
                 ph = ingest.fetch_price_history(tkr)
@@ -312,5 +329,10 @@ def refresh_universe(*, tickers: list[str] | None = None) -> dict:
                     cache.write_distribution_history(tkr, dx)
                     summary["distribution_history"] += len(dx)
             except Exception:    # pragma: no cover - network failures
-                continue
+                pass
+            try:
+                items = news_module.fetch_headlines(tkr, force_refresh=True)
+                summary["news"] += len(items)
+            except Exception:    # pragma: no cover - network failures
+                pass
     return summary
