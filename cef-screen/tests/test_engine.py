@@ -239,7 +239,7 @@ class TestRunPipeline:
 class TestBuildInputs:
     def test_empty_histories(self):
         row = {
-            "z_score_1yr": -1.0, "discount": -8.0,
+            "z_score_1yr": -1.0, "z_score_3m": -0.5, "discount": -8.0,
             "leverage_ratio": 30, "unii_per_share": 0.1,
             "eps": 0.5, "current_distribution": 0.04,
             "distribution_frequency": "Monthly",
@@ -249,10 +249,20 @@ class TestBuildInputs:
         empty = pd.DataFrame()
         out = engine._build_per_ticker_inputs(row, empty, empty, empty)
         assert out["z1"] == -1.0
+        # Regression: z3 used to be hardcoded to None, leaking "sparse data"
+        # into every row's buy_label even when ZScore3M was present.
+        assert out["z3"] == -0.5
         assert out["current_discount_pct"] == 8.0   # flipped
         assert out["nav_cagr_3y"] is None
         assert out["composition_quality"] == "incomplete"
         assert out["crisis_maintenance"] is None
+
+    def test_z3_none_when_missing(self):
+        row = {"z_score_1yr": -1.0, "discount": -8.0,
+               "leverage_ratio": 30, "category_name": "Taxable Bond"}
+        out = engine._build_per_ticker_inputs(
+            row, pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
+        assert out["z3"] is None
 
     def test_with_discount_history(self):
         row = {
@@ -311,45 +321,67 @@ class TestRefreshUniverse:
 
     def test_with_tickers(self, initialised_cache, monkeypatch):
         rows = _seed_universe()
-        ph, dh, dx = _seed_history_for("T00")
         monkeypatch.setattr(engine.ingest, "fetch_universe", lambda: rows)
-        monkeypatch.setattr(engine.ingest, "fetch_price_history",
-                            lambda tkr: ph)
-        monkeypatch.setattr(engine.ingest, "fetch_discount_history",
-                            lambda tkr: dh)
-        monkeypatch.setattr(engine.ingest, "fetch_distribution_history",
-                            lambda tkr: dx)
+        seen: list[str] = []
+        def _fake_deep(tkr, force_full=False):
+            seen.append(tkr)
+            return {"price_history": 100, "discount_history": 50,
+                    "distribution_history": 12}
+        monkeypatch.setattr(engine.cache, "refresh_ticker_deep", _fake_deep)
+        from cef_screener import news as news_mod
+        monkeypatch.setattr(news_mod, "fetch_headlines",
+                            lambda tkr, *, force_refresh=False, max_items=5: [])
         summary = engine.refresh_universe(tickers=["T00"])
         assert summary["universe"] == len(rows)
-        assert summary["price_history"] == len(ph)
-        assert summary["discount_history"] == len(dh)
-        assert summary["distribution_history"] == len(dx)
+        assert summary["price_history"] == 100
+        assert summary["discount_history"] == 50
+        assert summary["distribution_history"] == 12
+        assert seen == ["T00"]
 
     def test_with_tickers_empty_histories(self, initialised_cache, monkeypatch):
-        # Each fetch returns empty; corresponding `if` branch is False.
+        # refresh_ticker_deep reports 0 rows for each series
         rows = _seed_universe()
         monkeypatch.setattr(engine.ingest, "fetch_universe", lambda: rows)
-        monkeypatch.setattr(engine.ingest, "fetch_price_history", lambda tkr: [])
-        monkeypatch.setattr(engine.ingest, "fetch_discount_history", lambda tkr: [])
-        monkeypatch.setattr(engine.ingest, "fetch_distribution_history",
-                            lambda tkr: [])
+        monkeypatch.setattr(
+            engine.cache, "refresh_ticker_deep",
+            lambda tkr, force_full=False: {
+                "price_history": 0, "discount_history": 0,
+                "distribution_history": 0,
+            },
+        )
+        from cef_screener import news as news_mod
+        monkeypatch.setattr(news_mod, "fetch_headlines",
+                            lambda tkr, *, force_refresh=False, max_items=5: [])
         summary = engine.refresh_universe(tickers=["T00"])
         assert summary["price_history"] == 0
         assert summary["discount_history"] == 0
         assert summary["distribution_history"] == 0
+        assert summary["errors"] == 0
+
+    def test_with_tickers_records_errors(self, initialised_cache, monkeypatch):
+        rows = _seed_universe()
+        monkeypatch.setattr(engine.ingest, "fetch_universe", lambda: rows)
+        monkeypatch.setattr(
+            engine.cache, "refresh_ticker_deep",
+            lambda tkr, force_full=False: {"error": "network down"},
+        )
+        from cef_screener import news as news_mod
+        monkeypatch.setattr(news_mod, "fetch_headlines",
+                            lambda tkr, *, force_refresh=False, max_items=5: [])
+        summary = engine.refresh_universe(tickers=["T00", "T01"])
+        assert summary["errors"] == 2
+        assert summary["price_history"] == 0
 
     def test_full_refresh_autopicks_tickers(self, initialised_cache, monkeypatch):
         rows = _seed_universe()
-        ph, dh, dx = _seed_history_for("T00")
-        seen_tickers: list[str] = []
         monkeypatch.setattr(engine.ingest, "fetch_universe", lambda: rows)
-        monkeypatch.setattr(engine.ingest, "fetch_price_history",
-                            lambda tkr: (seen_tickers.append(tkr), ph)[1])
-        monkeypatch.setattr(engine.ingest, "fetch_discount_history",
-                            lambda tkr: dh)
-        monkeypatch.setattr(engine.ingest, "fetch_distribution_history",
-                            lambda tkr: dx)
-        # Patch the news module that engine imports lazily, then call full=True
+        seen_tickers: list[str] = []
+        def _fake_deep(tkr, force_full=False):
+            seen_tickers.append(tkr)
+            assert force_full is True   # full=True must propagate
+            return {"price_history": 800, "discount_history": 260,
+                    "distribution_history": 12}
+        monkeypatch.setattr(engine.cache, "refresh_ticker_deep", _fake_deep)
         from cef_screener import news as news_mod
         monkeypatch.setattr(
             news_mod, "fetch_headlines",
@@ -358,7 +390,6 @@ class TestRefreshUniverse:
             ],
         )
         summary = engine.refresh_universe(full=True)
-        # The full path should pick gatekeeper tickers (at least one)
         assert summary["universe"] == len(rows)
         assert summary["price_history"] > 0
         assert summary["news"] >= 1
@@ -368,30 +399,32 @@ class TestRefreshUniverse:
             self, initialised_cache, monkeypatch):
         # Fetch returns an empty list → no tickers selected, no per-ticker loop
         monkeypatch.setattr(engine.ingest, "fetch_universe", lambda: [])
-        called = {"ph": 0}
-        def _ph(tkr):
-            called["ph"] += 1
-            return []
-        monkeypatch.setattr(engine.ingest, "fetch_price_history", _ph)
+        called = {"deep": 0}
+        monkeypatch.setattr(
+            engine.cache, "refresh_ticker_deep",
+            lambda tkr, force_full=False: (called.__setitem__("deep", called["deep"] + 1), {})[1],
+        )
         with pytest.raises(ValueError):
             # write_universe will raise on empty input; that's fine — we just
             # need to confirm we never reach the per-ticker loop.
             engine.refresh_universe(full=True)
-        assert called["ph"] == 0
+        assert called["deep"] == 0
 
     def test_full_refresh_with_explicit_tickers_skips_autopick(
             self, initialised_cache, monkeypatch):
         rows = _seed_universe()
-        ph, dh, dx = _seed_history_for("T00")
         monkeypatch.setattr(engine.ingest, "fetch_universe", lambda: rows)
-        monkeypatch.setattr(engine.ingest, "fetch_price_history", lambda tkr: ph)
-        monkeypatch.setattr(engine.ingest, "fetch_discount_history", lambda tkr: dh)
-        monkeypatch.setattr(engine.ingest, "fetch_distribution_history",
-                            lambda tkr: dx)
+        monkeypatch.setattr(
+            engine.cache, "refresh_ticker_deep",
+            lambda tkr, force_full=False: {
+                "price_history": 100, "discount_history": 50,
+                "distribution_history": 12,
+            },
+        )
         from cef_screener import news as news_mod
         monkeypatch.setattr(news_mod, "fetch_headlines",
                             lambda tkr, *, force_refresh=False, max_items=5: [])
         summary = engine.refresh_universe(full=True, tickers=["T00"])
         # Explicit tickers list bypasses the autopick path; T00 history fetched.
-        assert summary["price_history"] == len(ph)
+        assert summary["price_history"] == 100
         assert summary["news"] == 0

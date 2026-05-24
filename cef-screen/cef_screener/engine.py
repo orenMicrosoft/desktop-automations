@@ -6,12 +6,15 @@ both ``cli.py`` and ``web.py``.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import pandas as pd
 
 from . import cache, config, ingest, metrics, portfolio, rules, scoring
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -111,7 +114,7 @@ def _build_per_ticker_inputs(
 
     return {
         "z1": _safe_float(row.get("z_score_1yr")),
-        "z3": None,
+        "z3": _safe_float(row.get("z_score_3m")),
         "current_discount_pct": discount_pct,
         "median_disc_5y": median_disc_5y,
         "dd_2020_pct": dd_2020,
@@ -296,6 +299,8 @@ def refresh_universe(*, tickers: list[str] | None = None,
     - ``tickers`` is a list → fetch universe + per-ticker histories + news
       for exactly those tickers.
 
+    Per-ticker history fetch delegates to :func:`cache.refresh_ticker_deep`
+    (which uses the right backfill periods / date ranges for each series).
     Returns a summary dict with row counts for the web/CLI layers.
     """
     universe_rows = ingest.fetch_universe()
@@ -304,7 +309,8 @@ def refresh_universe(*, tickers: list[str] | None = None,
                                "price_history": 0,
                                "discount_history": 0,
                                "distribution_history": 0,
-                               "news": 0}
+                               "news": 0,
+                               "errors": 0}
     if full and not tickers:
         u = cache.load_latest_universe()
         if not u.empty:
@@ -315,24 +321,19 @@ def refresh_universe(*, tickers: list[str] | None = None,
     if tickers:
         from . import news as news_module
         for tkr in tickers:
-            try:
-                ph = ingest.fetch_price_history(tkr)
-                if ph:
-                    cache.write_price_history(tkr, ph)
-                    summary["price_history"] += len(ph)
-                dh = ingest.fetch_discount_history(tkr)
-                if dh:
-                    cache.write_discount_history(tkr, dh)
-                    summary["discount_history"] += len(dh)
-                dx = ingest.fetch_distribution_history(tkr)
-                if dx:
-                    cache.write_distribution_history(tkr, dx)
-                    summary["distribution_history"] += len(dx)
-            except Exception:    # pragma: no cover - network failures
-                pass
+            deep = cache.refresh_ticker_deep(tkr, force_full=full)
+            if "error" in deep:
+                summary["errors"] += 1
+                log.warning("refresh_ticker_deep(%s) failed: %s",
+                            tkr, deep["error"])
+            else:
+                summary["price_history"] += deep.get("price_history", 0)
+                summary["discount_history"] += deep.get("discount_history", 0)
+                summary["distribution_history"] += deep.get(
+                    "distribution_history", 0)
             try:
                 items = news_module.fetch_headlines(tkr, force_refresh=True)
                 summary["news"] += len(items)
-            except Exception:    # pragma: no cover - network failures
-                pass
+            except Exception as e:    # pragma: no cover - network failures
+                log.warning("news.fetch_headlines(%s) failed: %r", tkr, e)
     return summary
