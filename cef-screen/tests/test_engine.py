@@ -131,6 +131,52 @@ class TestSnapshotAge:
         assert -1 < out < 48  # roughly today's age in hours
 
 
+class TestMissedBusinessDays:
+    def test_none(self):
+        assert engine._missed_business_days(None) is None
+
+    def test_garbage(self):
+        assert engine._missed_business_days("not-a-date") is None
+
+    def test_today_returns_zero(self):
+        # Snapshot dated today → 0 missed by definition
+        d = date.today().isoformat()
+        assert engine._missed_business_days(d) == 0
+
+    def test_future_snapshot_returns_zero(self):
+        # If the snapshot is somehow in the future (clock skew), don't warn
+        d = (date.today() + timedelta(days=5)).isoformat()
+        assert engine._missed_business_days(d) == 0
+
+    def test_weekend_after_friday_returns_zero(self):
+        # Friday 2026-05-22 → Sunday 2026-05-24 → no business day strictly
+        # between → 0 missed (markets closed both days in between, which is
+        # Saturday only — Sunday is "today" so excluded)
+        out = engine._missed_business_days("2026-05-22",
+                                           today=date(2026, 5, 24))
+        assert out == 0
+
+    def test_monday_after_friday_returns_zero(self):
+        # Friday → Monday: Sat (weekend) + Sun (weekend) between → 0 missed
+        # (Monday morning before market close should still see Friday data)
+        out = engine._missed_business_days("2026-05-22",
+                                           today=date(2026, 5, 25))
+        assert out == 0
+
+    def test_tuesday_after_friday_returns_one(self):
+        # Friday → Tuesday: Sat, Sun (weekends), Mon (business day) → 1 missed
+        out = engine._missed_business_days("2026-05-22",
+                                           today=date(2026, 5, 26))
+        assert out == 1
+
+    def test_multiple_business_days_behind(self):
+        # Friday 2026-05-15 → Wednesday 2026-05-27 → business days between
+        # are Mon 18, Tue 19, Wed 20, Thu 21, Fri 22, Mon 25, Tue 26 = 7
+        out = engine._missed_business_days("2026-05-15",
+                                           today=date(2026, 5, 27))
+        assert out == 7
+
+
 class TestBenchmarkCagr:
     def test_none(self):
         assert engine._benchmark_cagr(None) is None
@@ -252,6 +298,32 @@ class TestRunPipeline:
             cache.write_distribution_history(tkr, dx)
         result = engine.run_pipeline()
         assert any("Snapshot is" in w for w in result.warnings)
+
+    def test_weekend_fresh_snapshot_does_not_warn(self, initialised_cache,
+                                                  monkeypatch):
+        """Snapshot dated to the most-recent Friday must NOT trigger the
+        staleness warning when today is a weekend (or Monday pre-close) —
+        even though calendar age is > 24h. The API genuinely has nothing
+        newer to return, so warning users would be misleading."""
+        _populate(initialised_cache)
+        # Pretend the calendar age is 72h (would have warned under old logic)
+        monkeypatch.setattr(engine, "_snapshot_age_hours", lambda d: 72.0)
+        # But pretend no business day has elapsed since the snapshot
+        monkeypatch.setattr(engine, "_missed_business_days",
+                            lambda d, **kw: 0)
+        result = engine.run_pipeline()
+        assert not any("Snapshot is" in w for w in result.warnings)
+
+    def test_missed_business_days_unknown_does_not_warn(self, initialised_cache,
+                                                        monkeypatch):
+        """If _missed_business_days returns None (unparseable snapshot date)
+        we should not surface the staleness warning either."""
+        _populate(initialised_cache)
+        monkeypatch.setattr(engine, "_snapshot_age_hours", lambda d: 100.0)
+        monkeypatch.setattr(engine, "_missed_business_days",
+                            lambda d, **kw: None)
+        result = engine.run_pipeline()
+        assert not any("Snapshot is" in w for w in result.warnings)
 
     def test_persists_historical_scores(self, initialised_cache):
         _populate(initialised_cache)

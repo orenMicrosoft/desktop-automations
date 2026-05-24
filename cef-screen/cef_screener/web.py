@@ -154,8 +154,11 @@ _NAV = """
   <button id="quick-refresh-btn" type="button" title="Re-fetch only the universe snapshot (~5s)"
     onclick="(function(b){b.disabled=true;b.innerHTML='Refreshing&hellip;<span class=spinner></span>';
       fetch('/api/refresh',{method:'POST'}).then(r=>r.json()).then(j=>{
-        b.innerHTML = j.ok ? '✓ snapshot refreshed' : ('✗ ' + (j.message||'failed'));
-        setTimeout(()=>location.reload(), 600);
+        if(j.ok){
+          var s=j.summary||{};
+          b.innerHTML='✓ snapshot ' + (s.snapshot_date || 'refreshed');
+        } else { b.innerHTML='✗ ' + (j.message||'failed'); }
+        setTimeout(()=>location.reload(), 1200);
       }).catch(e=>{b.innerHTML='✗ error';b.disabled=false;});
     })(this)">Quick refresh</button>
   <button id="full-refresh-btn" type="button"
@@ -1080,6 +1083,17 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
         try:
             summary = engine.refresh_universe(full=full)
             _CACHE.clear()
+            # Include the resulting snapshot date so the UI can show it.
+            # If the API returned no newer data (e.g., weekend, holiday,
+            # pre-market) the date will be unchanged from before the call —
+            # that's the signal the front-end uses to explain "no new data".
+            try:
+                u = cache.load_latest_universe()
+                if not u.empty and "snapshot_date" in u.columns:
+                    summary = dict(summary)
+                    summary["snapshot_date"] = str(u["snapshot_date"].iloc[0])
+            except Exception:    # pragma: no cover - defensive
+                pass
             msg = "Full refresh complete" if full else "Snapshot refresh complete"
             return jsonify({"ok": True, "message": msg, "summary": summary})
         except Exception as e:

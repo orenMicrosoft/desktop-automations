@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
-from cef_screener import web, engine, config
+from cef_screener import web, engine, config, cache
 
 
 # ---------------------------------------------------------------- fixtures
@@ -530,6 +530,52 @@ class TestRefresh:
             data = resp.get_json()
             assert data["ok"] is False
             assert "boom" in data["message"]
+
+    def test_refresh_adds_snapshot_date_when_universe_loaded(
+            self, client, initialised_cache):
+        """When the cache has universe data after the refresh, the API
+        response includes the resulting snapshot_date so the UI can show
+        it (e.g. '✓ snapshot 2026-05-22'). Without this, users couldn't
+        tell whether the refresh actually produced new data."""
+        rows = [
+            {"Ticker": f"T{i:02d}", "Name": f"F{i}",
+             "CategoryName": "Taxable Bond", "SponsorName": "Acme",
+             "Price": 10.0, "NAV": 11.0, "Discount": -9.0,
+             "LastUpdated": "2026-05-22"}
+            for i in range(10)
+        ]
+        cache.write_universe(rows)
+        with patch.object(web.engine, "refresh_universe",
+                          return_value={"universe": 10}):
+            resp = client.post("/api/refresh")
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["summary"]["snapshot_date"] == "2026-05-22"
+
+    def test_refresh_omits_snapshot_date_when_cache_empty(self, client):
+        """If the universe cache is empty after refresh (shouldn't happen
+        in practice, but defensive), the response simply omits
+        snapshot_date rather than crashing."""
+        with patch.object(web.engine, "refresh_universe",
+                          return_value={"universe": 0}):
+            resp = client.post("/api/refresh")
+        data = resp.get_json()
+        assert data["ok"] is True
+        # No snapshot_date in the summary (empty cache)
+        assert "snapshot_date" not in data["summary"]
+
+    def test_refresh_swallows_cache_lookup_errors(self, client, monkeypatch):
+        """If load_latest_universe somehow raises, the refresh still
+        reports success — the snapshot_date is just absent from the summary
+        (defensive try/except in api_refresh, protected from breaking the UX)."""
+        monkeypatch.setattr(web.cache, "load_latest_universe",
+                            lambda: (_ for _ in ()).throw(RuntimeError("db err")))
+        with patch.object(web.engine, "refresh_universe",
+                          return_value={"universe": 5}):
+            resp = client.post("/api/refresh")
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert "snapshot_date" not in data["summary"]
 
 
 # ---------------------------------------------------------------- label class helper

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -191,6 +191,37 @@ def _snapshot_age_hours(snapshot_date: str | None) -> float | None:
     return (datetime.now(timezone.utc) - snap).total_seconds() / 3600.0
 
 
+def _missed_business_days(snapshot_date: str | None,
+                          *, today: "datetime.date | None" = None) -> int | None:
+    """Number of US business days (Mon-Fri) that have fully elapsed
+    between ``snapshot_date`` and ``today`` (exclusive on both ends).
+
+    0 means the snapshot is current relative to the calendar — no new
+    business day has passed since the data was published. >= 1 means
+    a trading day went by without an update (genuinely stale).
+
+    Returns ``None`` if ``snapshot_date`` is missing or unparseable.
+    Note: weekday-only, does not account for US market holidays.
+    """
+    if not snapshot_date:
+        return None
+    try:
+        snap = datetime.fromisoformat(snapshot_date[:10]).date()
+    except ValueError:
+        return None
+    if today is None:
+        today = datetime.now(timezone.utc).date()
+    if snap >= today:
+        return 0
+    n = 0
+    cur = snap + timedelta(days=1)
+    while cur < today:
+        if cur.weekday() < 5:
+            n += 1
+        cur += timedelta(days=1)
+    return n
+
+
 def _peer_percentile_for(universe: pd.DataFrame, row: dict,
                          own_ret: float | None) -> float | None:
     """Compare ``own_ret`` (universe row's ``yr3_ret_on_nav``, in percent)
@@ -246,7 +277,16 @@ def run_pipeline(*, positions_path=None) -> RunResult:
     liquid = universe[universe.apply(rules.passes_liquidity, axis=1)]
 
     if snapshot_age is not None and snapshot_age > 24:
-        warnings.append(f"Snapshot is {snapshot_age:.1f}h old (>24h).")
+        missed = _missed_business_days(snapshot_date)
+        if missed and missed >= 1:
+            # At least one trading day has come and gone without an update.
+            warnings.append(
+                f"Snapshot is {snapshot_age:.1f}h old and {missed} business "
+                f"day(s) behind — CEFConnect should have newer data. Try "
+                f"Full refresh."
+            )
+        # else: snapshot date is the most recent business day (e.g. weekend
+        # or pre-market on Monday) — no warning, the API has nothing newer.
 
     gate = rules.gatekeeper_top_n(universe, n=config.GATEKEEPER_SIZE,
                                   sort_col="z_score_1yr")
