@@ -873,7 +873,7 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
         else:
             head = ("<tr><th>Ticker</th><th>Name</th><th>Category</th>"
                     "<th>Disc%</th><th>Z Rank</th>"
-                    "<th>Z1Y</th><th>Z3M</th><th>Z6M</th>"
+                    "<th>Z1Y</th>"
                     "<th>Composite</th>"
                     "<th>Trap</th><th>Buy</th><th>Why?</th></tr>")
             body_rows = []
@@ -899,8 +899,6 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
                     f"<td>{_format_pct(r.get('current_discount_pct'))}</td>"
                     f"<td title='{html.escape(rank_tip)}'>{rank_cell}</td>"
                     f"<td>{_format_pct(r.get('z1'))}</td>"
-                    f"<td>{_format_pct(r.get('z3'))}</td>"
-                    f"<td>{_format_pct(r.get('z6'))}</td>"
                     f"<td>{_format_pct(r.get('composite'), 1)}</td>"
                     f"<td title='{trap_tip}'>{html.escape(trap_tier)}</td>"
                     f"<td class='{cls}' title='{html.escape(label)}'>"
@@ -1078,8 +1076,6 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
             ("Discount %", _format_pct(r.get("current_discount_pct"))),
             ("Median discount 5Y %", _format_pct(r.get("median_disc_5y"))),
             ("Z 1Y", _format_pct(r.get("z1"))),
-            ("Z 3M", _format_pct(r.get("z3"))),
-            ("Z 6M", _format_pct(r.get("z6"))),
             ("Z Rank (1Y)",
              f"{int(r.get('z_rank'))}/{int(r.get('z_rank_total'))}"
              if pd.notna(r.get("z_rank")) and pd.notna(r.get("z_rank_total"))

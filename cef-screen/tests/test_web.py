@@ -1305,29 +1305,35 @@ class TestFormatLastRefresh:
 
 
 class TestBuyZScoresColumns:
-    def test_buy_page_renders_z3m_header(self, client):
+    def test_buy_page_does_not_render_z3m_header(self, client):
+        # User asked to hide Z3M / Z6M — Z1Y only on the dashboard.
         with patch("cef_screener.web._get_result", return_value=_make_run_result()):
             resp = client.get("/")
         body = resp.get_data(as_text=True)
-        assert "<th>Z3M</th>" in body
-        assert "<th>Z6M</th>" in body
+        assert "<th>Z3M</th>" not in body
+        assert "<th>Z6M</th>" not in body
 
-    def test_buy_page_renders_z3_and_z6_values(self, client):
+    def test_buy_page_still_renders_z1y_header(self, client):
         with patch("cef_screener.web._get_result", return_value=_make_run_result()):
             resp = client.get("/")
         body = resp.get_data(as_text=True)
-        # T00 z3 = -0.9, z6 = -1.2 from fixture
-        assert "-0.90" in body or "-0.9" in body
-        assert "-1.20" in body or "-1.2" in body
+        assert "<th>Z1Y</th>" in body
 
 
 class TestInspectZScoresRows:
-    def test_inspect_renders_z3m_and_z6m_rows(self, client):
+    def test_inspect_does_not_render_z3m_or_z6m_rows(self, client):
+        # Hidden on /inspect too — Z1Y only.
         with patch("cef_screener.web._get_result", return_value=_make_run_result()):
             resp = client.get("/inspect/T00")
         body = resp.get_data(as_text=True)
-        assert "Z 3M" in body
-        assert "Z 6M" in body
+        assert "Z 3M" not in body
+        assert "Z 6M" not in body
+
+    def test_inspect_still_renders_z1y_row(self, client):
+        with patch("cef_screener.web._get_result", return_value=_make_run_result()):
+            resp = client.get("/inspect/T00")
+        body = resp.get_data(as_text=True)
+        assert "Z 1Y" in body
 
 
 class TestLastRefreshOnPages:
