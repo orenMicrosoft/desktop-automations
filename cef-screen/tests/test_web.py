@@ -781,3 +781,218 @@ class TestInspectNewsAndBanner:
             resp = client.get('/inspect/T00')
         body = resp.data.decode('utf-8')
         assert "No per-ticker history cached" not in body
+
+
+# ---------------------------------------------------------------- Phase 2 helpers
+class TestSparkline:
+    def test_empty(self):
+        assert web._sparkline([]) == ""
+
+    def test_all_none(self):
+        assert web._sparkline([None, None]) == ""
+
+    def test_all_nan(self):
+        assert web._sparkline([float("nan"), float("nan")]) == ""
+
+    def test_all_same_value(self):
+        s = web._sparkline([10, 10, 10, 10])
+        # All four positions render the same middle level
+        assert len(s) == 4
+        assert len(set(s)) == 1
+
+    def test_single_value(self):
+        s = web._sparkline([42])
+        assert len(s) == 1
+        assert s in web._SPARK_BLOCKS
+
+    def test_ascending(self):
+        s = web._sparkline([0, 1, 2, 3, 4, 5, 6, 7])
+        assert s[0] == web._SPARK_BLOCKS[0]
+        assert s[-1] == web._SPARK_BLOCKS[-1]
+        # Monotone non-decreasing
+        assert list(s) == sorted(s, key=web._SPARK_BLOCKS.index)
+
+    def test_filters_nan(self):
+        s = web._sparkline([0, float("nan"), 7])
+        assert len(s) == 2  # NaN dropped
+        assert s[0] == web._SPARK_BLOCKS[0]
+        assert s[-1] == web._SPARK_BLOCKS[-1]
+
+
+class TestPastStatusHtml:
+    def test_empty_history_shows_placeholder(self, initialised_cache):
+        out = web._past_status_html("ZZZ")
+        assert "Past status" in out
+        assert "No score history" in out
+
+    def test_renders_table_and_sparkline(self, initialised_cache):
+        from cef_screener import cache as _cache
+        for d, c in [("2026-05-01", 50.0),
+                     ("2026-05-02", 60.0),
+                     ("2026-05-03", 70.0)]:
+            _cache.persist_historical_scores(
+                pd.DataFrame([{
+                    "ticker": "PFL", "composite": c,
+                    "s_disc": c, "s_res": c, "s_sust": c, "s_peer": c,
+                    "multiplier": 1.0, "buy_label": "BUY-B",
+                }]), d)
+        out = web._past_status_html("PFL")
+        assert "3 snapshots" in out
+        assert "2026-05-01" in out and "2026-05-03" in out
+        assert "BUY-B" in out
+        # Sparkline + positive delta (last - first = +20)
+        assert web._SPARK_BLOCKS[0] in out
+        assert web._SPARK_BLOCKS[-1] in out
+        assert "20.0" in out and "▲" in out
+
+    def test_renders_negative_delta(self, initialised_cache):
+        from cef_screener import cache as _cache
+        for d, c in [("2026-05-01", 70.0), ("2026-05-02", 50.0)]:
+            _cache.persist_historical_scores(
+                pd.DataFrame([{"ticker": "PFL", "composite": c}]), d)
+        out = web._past_status_html("PFL")
+        assert "▼" in out and "20.0" in out
+
+    def test_renders_flat_delta(self, initialised_cache):
+        from cef_screener import cache as _cache
+        for d in ["2026-05-01", "2026-05-02"]:
+            _cache.persist_historical_scores(
+                pd.DataFrame([{"ticker": "PFL", "composite": 60.0}]), d)
+        out = web._past_status_html("PFL")
+        assert "▶" in out
+
+    def test_handles_missing_composite_delta(self, initialised_cache):
+        from cef_screener import cache as _cache
+        _cache.persist_historical_scores(
+            pd.DataFrame([{"ticker": "PFL", "composite": None}]),
+            "2026-05-01")
+        out = web._past_status_html("PFL")
+        # Should still render but without delta arrows
+        assert "Past status" in out
+        assert "▲" not in out and "▼" not in out
+
+    def test_load_exception_returns_placeholder(self):
+        with patch.object(web.cache, "load_historical_scores",
+                          side_effect=RuntimeError("DB on fire")):
+            out = web._past_status_html("PFL")
+        assert "Past status" in out
+        assert "Past status unavailable" in out
+        assert "DB on fire" in out
+
+
+class TestRollingDrawdowns:
+    def test_empty(self):
+        assert web._rolling_drawdowns([]) == {}
+
+    def test_single_value(self):
+        assert web._rolling_drawdowns([100.0]) == {}
+
+    def test_simple_drop(self):
+        # 100 → 80 = 20% drawdown
+        dd = web._rolling_drawdowns([100.0, 80.0])
+        assert dd["30d"] == pytest.approx(20.0)
+
+    def test_zero_running_max_skipped(self):
+        # All zeros — running_max stays 0, no division
+        dd = web._rolling_drawdowns([0.0, 0.0, 0.0])
+        for v in dd.values():
+            assert v == 0.0
+
+    def test_ascending_then_descending_tracks_running_max(self):
+        # Ascending then drop: peak at 120 then drop to 90 = 25%
+        dd = web._rolling_drawdowns([100.0, 110.0, 120.0, 90.0])
+        assert dd["30d"] == pytest.approx(25.0)
+
+    def test_longer_windows_only_when_enough_data(self):
+        # Just 50 points → 30d window applies but slice = full series
+        nav = [100.0 - i for i in range(50)]
+        dd = web._rolling_drawdowns(nav)
+        assert "30d" in dd
+        # 90d/1y/3y all defined too (use what we have)
+        assert dd["30d"] > 0
+
+
+class TestDrawdownsHtml:
+    def test_no_price_history(self, initialised_cache):
+        out = web._drawdowns_html("ZZZ", {"dd_2020_pct": None})
+        assert "Drawdown profile" in out
+        assert "No price history cached" in out
+
+    def test_renders_drawdowns_and_crisis(self, initialised_cache):
+        from cef_screener import cache as _cache
+        from datetime import date as _date, timedelta as _td
+        d0 = _date(2026, 1, 1)
+        rows = []
+        for i in range(40):
+            nav = 100.0 if i < 20 else 80.0
+            rows.append({
+                "DataDate": (d0 + _td(days=i)).isoformat(),
+                "Data": nav, "NAVData": nav, "DiscountData": 0.0,
+            })
+        _cache.write_price_history("PFL", rows)
+        out = web._drawdowns_html(
+            "PFL", {"dd_2020_pct": -0.18, "dd_2022_pct": -0.22})
+        assert "Drawdown profile" in out
+        assert "30d" in out and "−20.0%" in out
+        # Crisis blocks render the supplied numbers (with negative-decimal coerced)
+        assert "2020" in out and "2022" in out
+        # NAV sparkline rendered
+        assert "NAV trend" in out
+
+    def test_no_crisis_section_when_missing(self, initialised_cache):
+        from cef_screener import cache as _cache
+        _cache.write_price_history("PFL", [
+            {"DataDate": "2026-01-01", "Data": 100.0, "NAVData": 100.0,
+             "DiscountData": 0.0},
+            {"DataDate": "2026-01-02", "Data": 95.0, "NAVData": 95.0,
+             "DiscountData": 0.0},
+        ])
+        out = web._drawdowns_html("PFL", {"dd_2020_pct": None,
+                                            "dd_2022_pct": None})
+        assert "Crisis-window drawdowns" not in out
+
+    def test_handles_dict_row(self, initialised_cache):
+        from cef_screener import cache as _cache
+        _cache.write_price_history("PFL", [
+            {"DataDate": "2026-01-01", "Data": 100.0, "NAVData": 100.0,
+             "DiscountData": 0.0},
+            {"DataDate": "2026-01-02", "Data": 90.0, "NAVData": 90.0,
+             "DiscountData": 0.0},
+        ])
+        # dict (not Series) row — .get must still work
+        out = web._drawdowns_html("PFL", {"dd_2020_pct": -0.30,
+                                            "dd_2022_pct": -0.15})
+        assert "2020" in out
+
+    def test_load_exception_returns_placeholder(self, initialised_cache):
+        with patch.object(web.cache, "load_price_history",
+                          side_effect=RuntimeError("disk on fire")):
+            out = web._drawdowns_html("PFL", {})
+        assert "Drawdown profile" in out
+        assert "Drawdowns unavailable" in out
+        assert "disk on fire" in out
+
+    def test_dataframe_without_nav_or_price_column(self, initialised_cache):
+        bogus = pd.DataFrame([{"data_date": "2026-01-01", "discount": 0.05}])
+        with patch.object(web.cache, "load_price_history", return_value=bogus):
+            out = web._drawdowns_html("PFL", {})
+        assert "no NAV column" in out
+
+
+class TestInspectPhase2Integration:
+    def test_inspect_includes_past_status_block(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, 'run_pipeline', return_value=r), \
+             patch.object(web.news, 'fetch_headlines', return_value=[]):
+            resp = client.get('/inspect/T00')
+        body = resp.data.decode('utf-8')
+        assert "Past status" in body
+        assert "Drawdown profile" in body
+
+    def test_inspect_phase2_no_longer_says_coming_soon(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, 'run_pipeline', return_value=r), \
+             patch.object(web.news, 'fetch_headlines', return_value=[]):
+            resp = client.get('/inspect/T00')
+        body = resp.data.decode('utf-8')
+        assert "coming soon" not in body.lower()

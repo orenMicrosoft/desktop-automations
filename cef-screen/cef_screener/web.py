@@ -291,6 +291,164 @@ def _news_html(ticker: str) -> str:
             + "".join(rows) + "</ul>")
 
 
+# =====================================================================
+# Phase 2 — past status (score drift)
+# =====================================================================
+_SPARK_BLOCKS = "▁▂▃▄▅▆▇█"
+
+
+def _sparkline(values: list[float]) -> str:
+    """Unicode block-character sparkline for a list of numbers."""
+    nums = [float(v) for v in values
+            if v is not None and not (isinstance(v, float) and v != v)]
+    if not nums:
+        return ""
+    lo, hi = min(nums), max(nums)
+    if hi - lo < 1e-9:
+        return _SPARK_BLOCKS[3] * len(nums)
+    bucket = len(_SPARK_BLOCKS) - 1
+    out = []
+    for v in nums:
+        idx = int(round((v - lo) / (hi - lo) * bucket))
+        out.append(_SPARK_BLOCKS[max(0, min(bucket, idx))])
+    return "".join(out)
+
+
+def _past_status_html(ticker: str) -> str:
+    """Render the historical-scores trend section for /inspect."""
+    try:
+        hist = cache.load_historical_scores(ticker)
+    except Exception as e:
+        return (f"<h3>📋 Past status</h3>"
+                f"<div class='placeholder'>Past status unavailable: "
+                f"{html.escape(str(e))}</div>")
+    if hist is None or hist.empty:
+        return ("<h3>📋 Past status</h3>"
+                "<div class='placeholder'>No score history cached yet — "
+                "this section starts populating after the next pipeline run. "
+                "Click <b>Quick refresh</b> or <b>Full refresh</b> above to "
+                "force a run.</div>")
+    composites = [float(v) for v in hist["composite"].tolist()
+                  if v is not None and not (isinstance(v, float) and v != v)]
+    spark = _sparkline(composites)
+    first = hist.iloc[0]
+    last = hist.iloc[-1]
+    delta = None
+    if _present(last.get("composite")) and _present(first.get("composite")):
+        delta = float(last["composite"]) - float(first["composite"])
+    delta_str = ""
+    if delta is not None:
+        arrow = "▲" if delta > 0 else ("▼" if delta < 0 else "▶")
+        colour = "#3fb950" if delta > 0 else ("#f85149" if delta < 0 else "#8b949e")
+        delta_str = (f" <span style='color:{colour}'>{arrow} "
+                     f"{abs(delta):.1f}</span>")
+    head = ("<tr><th>Date</th><th>Composite</th><th>S Disc</th>"
+            "<th>S Res</th><th>S Sust</th><th>S Peer</th>"
+            "<th>Mult</th><th>Label</th></tr>")
+    row_html = []
+    for _, r in hist.tail(10).iloc[::-1].iterrows():
+        row_html.append(
+            "<tr>"
+            f"<td>{html.escape(str(r.get('snapshot_date') or ''))}</td>"
+            f"<td>{_format_pct(r.get('composite'), 1)}</td>"
+            f"<td>{_format_pct(r.get('s_disc'), 1)}</td>"
+            f"<td>{_format_pct(r.get('s_res'), 1)}</td>"
+            f"<td>{_format_pct(r.get('s_sust'), 1)}</td>"
+            f"<td>{_format_pct(r.get('s_peer'), 1)}</td>"
+            f"<td>{_format_pct(r.get('multiplier'), 2)}</td>"
+            f"<td>{html.escape(str(r.get('buy_label') or ''))}</td>"
+            "</tr>"
+        )
+    return (
+        f"<h3>📋 Past status — score drift ({len(hist)} snapshots)</h3>"
+        f"<div style='font-family:monospace;font-size:1.4rem;letter-spacing:2px'>"
+        f"{html.escape(spark)}{delta_str}</div>"
+        f"<table style='font-size:0.85rem'>{head}{''.join(row_html)}</table>"
+    )
+
+
+# =====================================================================
+# Phase 2 — drawdowns / live performance
+# =====================================================================
+def _rolling_drawdowns(nav_series: list[float]) -> dict:
+    """Compute max drawdown over trailing 30 / 90 / 252 / 756 day windows.
+
+    Returns a dict of ``{window_label: pct}`` where pct is positive (e.g.
+    25.0 means 25% drawdown). Missing windows are omitted.
+    """
+    if not nav_series:
+        return {}
+    out: dict[str, float] = {}
+    n = len(nav_series)
+    spec = [("30d", 30), ("90d", 90), ("1y", 252), ("3y", 756)]
+    for label, win in spec:
+        if n < 2:
+            break
+        slice_ = nav_series[-win:] if n >= win else nav_series
+        running_max = slice_[0]
+        max_dd = 0.0
+        for v in slice_:
+            if v > running_max:
+                running_max = v
+            if running_max > 0:
+                dd = (running_max - v) / running_max * 100.0
+                if dd > max_dd:
+                    max_dd = dd
+        out[label] = max_dd
+    return out
+
+
+def _drawdowns_html(ticker: str, row: pd.Series | dict) -> str:
+    """Render the rolling-drawdown + crisis-window section for /inspect."""
+    try:
+        ph = cache.load_price_history(ticker)
+    except Exception as e:
+        return (f"<h3>📉 Drawdown profile</h3>"
+                f"<div class='placeholder'>Drawdowns unavailable: "
+                f"{html.escape(str(e))}</div>")
+    if ph is None or ph.empty:
+        return ("<h3>📉 Drawdown profile</h3>"
+                "<div class='placeholder'>No price history cached for "
+                f"<code>{html.escape(ticker)}</code> — run <b>Full refresh</b>.</div>")
+    nav_col = "nav" if "nav" in ph.columns else "price"
+    if nav_col not in ph.columns:
+        return ("<h3>📉 Drawdown profile</h3>"
+                "<div class='placeholder'>Cached history has no NAV column "
+                "— refresh required.</div>")
+    nav_clean = pd.to_numeric(ph[nav_col], errors="coerce").dropna().tolist()
+    dd = _rolling_drawdowns(nav_clean)
+    rows = "".join(
+        f"<tr><td>{html.escape(label)}</td>"
+        f"<td>−{val:.1f}%</td></tr>"
+        for label, val in dd.items()
+    )
+    table = (f"<table style='font-size:0.9rem;max-width:300px'>"
+             f"<tr><th>Window</th><th>Max drawdown</th></tr>"
+             f"{rows}</table>") if dd else ""
+    crisis_bits = []
+    for label, key in (("2020 (COVID)", "dd_2020_pct"),
+                       ("2022 (rate-hike)", "dd_2022_pct")):
+        v = row.get(key) if hasattr(row, "get") else None
+        if _present(v):
+            crisis_bits.append(f"<li><b>{html.escape(label)}</b>: "
+                               f"−{float(v):.1f}%</li>")
+    crisis = ("<h4 style='margin:0.5rem 0'>Crisis-window drawdowns</h4>"
+              f"<ul>{''.join(crisis_bits)}</ul>") if crisis_bits else ""
+    # NAV sparkline over the trailing 120 trading days
+    spark_vals = nav_clean[-120:] if len(nav_clean) >= 2 else []
+    spark = _sparkline(spark_vals)
+    spark_html = ""
+    if spark:
+        spark_html = (
+            f"<h4 style='margin:0.5rem 0'>NAV trend (last {len(spark_vals)} "
+            f"sessions)</h4>"
+            f"<div style='font-family:monospace;font-size:1.4rem;"
+            f"letter-spacing:2px'>{html.escape(spark)}</div>"
+        )
+    return ("<h3>📉 Drawdown profile</h3>"
+            f"{table}{crisis}{spark_html}")
+
+
 _LEGEND_HTML = """
 <details class="legend" open>
   <summary>What do these labels mean? (click rows for full details)</summary>
@@ -552,13 +710,8 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
                 f"to fetch this fund's price/discount/distribution history.</div>"
             )
         news_block = _news_html(ticker.upper())
-        phase2 = (
-            "<h3>Phase 2 (coming soon)</h3>"
-            "<div class='placeholder'>📋 Past status — how this ticker's score "
-            "has drifted over time.</div>"
-            "<div class='placeholder'>📉 Live performance through future "
-            "drawdowns.</div>"
-        )
+        phase2 = (_past_status_html(ticker.upper())
+                  + _drawdowns_html(ticker.upper(), r))
         return _layout(
             f"Inspect {ticker.upper()}",
             f"{history_banner}<div class='kv'>{rows}</div>"

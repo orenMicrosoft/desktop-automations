@@ -156,7 +156,7 @@ class TestPeerPercentile:
 
     def test_no_category_returns_none(self):
         df = pd.DataFrame({"category_name": ["X"], "leverage_ratio": [25.0],
-                           "yr1_ret_on_nav": [0.05]})
+                           "yr3_ret_on_nav": [0.05]})
         out = engine._peer_percentile_for(df, {"category_name": None}, 0.05)
         assert out is None
 
@@ -164,7 +164,7 @@ class TestPeerPercentile:
         df = pd.DataFrame({
             "category_name": ["X"] * 6,
             "leverage_ratio": [25.0] * 6,
-            "yr1_ret_on_nav": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06],
+            "yr3_ret_on_nav": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06],
         })
         out = engine._peer_percentile_for(df, {"category_name": "X", "leverage_ratio": 25}, 0.04)
         assert out is not None
@@ -175,12 +175,31 @@ class TestPeerPercentile:
         df = pd.DataFrame({
             "category_name": ["X"] * 6,
             "leverage_ratio": [25, 25, 60, 60, 60, 60],
-            "yr1_ret_on_nav": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06],
+            "yr3_ret_on_nav": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06],
         })
         out = engine._peer_percentile_for(
             df, {"category_name": "X", "leverage_ratio": 25}, 0.04,
         )
         assert out is not None
+
+    def test_regression_uses_yr3_not_yr1(self):
+        """Used to use yr1_ret_on_nav for peers but yr3 for own — apples to
+        oranges and unit-mismatched → percentile = 0 for everyone."""
+        df = pd.DataFrame({
+            "category_name": ["X"] * 5,
+            "leverage_ratio": [25.0] * 5,
+            # Wildly different magnitudes on the two columns — if the code
+            # still used yr1, own=20 would be at the top; with yr3 it's in
+            # the middle.
+            "yr1_ret_on_nav": [100, 200, 300, 400, 500],
+            "yr3_ret_on_nav": [10, 15, 20, 25, 30],
+        })
+        out = engine._peer_percentile_for(
+            df, {"category_name": "X", "leverage_ratio": 25}, 20.0,
+        )
+        assert out is not None
+        # Median own=20 → percentile in the middle, NOT at the bottom
+        assert 0.3 < out < 0.7
 
 
 # ---------------------------------------------------------------- integration
@@ -233,6 +252,17 @@ class TestRunPipeline:
             cache.write_distribution_history(tkr, dx)
         result = engine.run_pipeline()
         assert any("Snapshot is" in w for w in result.warnings)
+
+    def test_persists_historical_scores(self, initialised_cache):
+        _populate(initialised_cache)
+        result = engine.run_pipeline()
+        assert not result.scored.empty
+        # Pick the first scored ticker and verify it's in historical_scores
+        first_ticker = str(result.scored.iloc[0]["ticker"]).upper()
+        hist = cache.load_historical_scores(first_ticker)
+        assert not hist.empty
+        # Snapshot date column should match the result's snapshot_date
+        assert str(hist.iloc[0]["snapshot_date"]) == str(result.snapshot_date)
 
 
 # ---------------------------------------------------------------- _build_per_ticker_inputs branches

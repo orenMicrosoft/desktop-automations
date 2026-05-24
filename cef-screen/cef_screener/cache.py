@@ -23,7 +23,7 @@ from . import config, ingest
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 3  # bumps with every breaking schema change
+SCHEMA_VERSION = 4  # bumps with every breaking schema change
 
 # =====================================================================
 # Schema (plan §4.1)
@@ -137,6 +137,20 @@ CREATE TABLE IF NOT EXISTS news_headlines (
     link         TEXT,
     published    TEXT,
     PRIMARY KEY (ticker, idx)
+);
+
+CREATE TABLE IF NOT EXISTS historical_scores (
+    ticker          TEXT NOT NULL,
+    snapshot_date   TEXT NOT NULL,
+    composite       REAL,
+    s_disc          REAL,
+    s_res           REAL,
+    s_sust          REAL,
+    s_peer          REAL,
+    multiplier      REAL,
+    buy_label       TEXT,
+    trap_tier       TEXT,
+    PRIMARY KEY (ticker, snapshot_date)
 );
 
 CREATE TABLE IF NOT EXISTS schema_version (v INTEGER NOT NULL);
@@ -629,6 +643,99 @@ def write_news(ticker: str, items: list[dict]) -> int:
             )
         conn.commit()
     return len(rows)
+
+
+# =====================================================================
+# Historical scores (Phase 2 — score-drift over time)
+# =====================================================================
+_HISTORICAL_SCORES_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS historical_scores (
+    ticker          TEXT NOT NULL,
+    snapshot_date   TEXT NOT NULL,
+    composite       REAL,
+    s_disc          REAL,
+    s_res           REAL,
+    s_sust          REAL,
+    s_peer          REAL,
+    multiplier      REAL,
+    buy_label       TEXT,
+    trap_tier       TEXT,
+    PRIMARY KEY (ticker, snapshot_date)
+);
+"""
+
+_HISTORICAL_SCORES_COLS = (
+    "ticker", "composite", "s_disc", "s_res", "s_sust", "s_peer",
+    "multiplier", "buy_label", "trap_tier",
+)
+
+
+def _ensure_historical_scores_table(conn: sqlite3.Connection) -> None:
+    """Idempotent: create historical_scores if a legacy DB is missing it."""
+    conn.execute(_HISTORICAL_SCORES_TABLE_DDL)
+
+
+def persist_historical_scores(scored: pd.DataFrame,
+                              snapshot_date: str | None) -> int:
+    """Append (or replace) one row per ticker for this snapshot date.
+
+    Silently no-ops if ``scored`` is empty or ``snapshot_date`` is falsy
+    (so engine.run_pipeline can call it unconditionally).
+    Returns the number of rows written.
+    """
+    if scored is None or scored.empty or not snapshot_date:
+        return 0
+    snap = str(snapshot_date).strip()
+    if not snap:
+        return 0
+    rows: list[tuple] = []
+    for _, r in scored.iterrows():
+        ticker = str(r.get("ticker") or "").strip().upper()
+        if not ticker:
+            continue
+        rows.append((
+            ticker, snap,
+            _f(r.get("composite")),
+            _f(r.get("s_disc")),
+            _f(r.get("s_res")),
+            _f(r.get("s_sust")),
+            _f(r.get("s_peer")),
+            _f(r.get("multiplier")),
+            (str(r.get("buy_label")) if r.get("buy_label") is not None else None),
+            (str(r.get("trap_tier")) if r.get("trap_tier") is not None else None),
+        ))
+    if not rows:
+        return 0
+    with connect() as conn:
+        _ensure_historical_scores_table(conn)
+        conn.executemany(
+            "INSERT OR REPLACE INTO historical_scores "
+            "(ticker, snapshot_date, composite, s_disc, s_res, s_sust, "
+            "s_peer, multiplier, buy_label, trap_tier) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+        conn.commit()
+    return len(rows)
+
+
+def load_historical_scores(ticker: str) -> pd.DataFrame:
+    """Return all stored snapshots for ``ticker`` sorted ascending by date."""
+    ticker_u = (ticker or "").strip().upper()
+    if not ticker_u:
+        return pd.DataFrame()
+    with connect() as conn:
+        _ensure_historical_scores_table(conn)
+        rows = conn.execute(
+            "SELECT snapshot_date, composite, s_disc, s_res, s_sust, "
+            "s_peer, multiplier, buy_label, trap_tier "
+            "FROM historical_scores WHERE ticker = ? "
+            "ORDER BY snapshot_date ASC",
+            (ticker_u,),
+        ).fetchall()
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame([dict(r) for r in rows])
 
 
 # =====================================================================

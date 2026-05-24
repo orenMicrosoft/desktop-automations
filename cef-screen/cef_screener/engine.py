@@ -193,6 +193,17 @@ def _snapshot_age_hours(snapshot_date: str | None) -> float | None:
 
 def _peer_percentile_for(universe: pd.DataFrame, row: dict,
                          own_ret: float | None) -> float | None:
+    """Compare ``own_ret`` (universe row's ``yr3_ret_on_nav``, in percent)
+    against the same column across category-and-leverage-tier peers.
+
+    Bug history: used to compare ``inputs["nav_total_return_3y"]`` (3y
+    NAV total return, in decimal — e.g. 0.18) against peers' ``yr1_ret_on_nav``
+    (1y return, in percent — e.g. 18.0). The unit mismatch alone made own
+    always smaller than every peer → percentile = 0 across the board,
+    which dragged composites down by ~10-15 points. The 3y-vs-1y horizon
+    mismatch was a separate apples-to-oranges bug. Fixed by using the
+    same column (yr3_ret_on_nav) on both sides.
+    """
     if own_ret is None or universe.empty:
         return None
     cat = row.get("category_name")
@@ -206,7 +217,7 @@ def _peer_percentile_for(universe: pd.DataFrame, row: dict,
     bucket = peers[peers["_tier"] == lev_tier]
     if len(bucket) < 5:
         bucket = peers
-    series = pd.to_numeric(bucket.get("yr1_ret_on_nav", pd.Series([], dtype=float)),
+    series = pd.to_numeric(bucket.get("yr3_ret_on_nav", pd.Series([], dtype=float)),
                            errors="coerce").dropna()
     return metrics.peer_percentile(series, own_ret) if not series.empty else None
 
@@ -247,12 +258,21 @@ def run_pipeline(*, positions_path=None) -> RunResult:
         dh = cache.load_discount_history(tkr)
         dx = cache.load_distribution_history(tkr)
         inputs = _build_per_ticker_inputs(row, ph, dh, dx)
-        peer_pct = _peer_percentile_for(universe, row, inputs["nav_total_return_3y"])
+        # Use the universe row's yr3_ret_on_nav (in percent) so we compare
+        # against peers on the same column/unit/horizon.
+        own_3y_pct = _safe_float(row.get("yr3_ret_on_nav"))
+        peer_pct = _peer_percentile_for(universe, row, own_3y_pct)
         benchmark_cagr = _benchmark_cagr(row.get("category_name"))
         score = _score_one(inputs, peer_pct, benchmark_cagr)
         rows.append({"ticker": tkr, **row, **inputs, **score, "peer_pct": peer_pct})
 
     scored = pd.DataFrame(rows).sort_values("composite", ascending=False) if rows else pd.DataFrame()
+
+    # Persist scores for the score-drift / past-status feature on /inspect.
+    try:
+        cache.persist_historical_scores(scored, snapshot_date)
+    except Exception as e:    # pragma: no cover - defensive
+        log.warning("persist_historical_scores failed: %r", e)
 
     holdings: list[dict] = []
     try:
@@ -267,7 +287,7 @@ def run_pipeline(*, positions_path=None) -> RunResult:
             snap_by_t[str(r["ticker"]).upper()] = {
                 "price": _safe_float(r.get("price")),
                 "z1": _safe_float(r.get("z_score_1yr")),
-                "z3": None,
+                "z3": _safe_float(r.get("z_score_3m")),
             }
         dists_by_t: dict[str, list] = {}
         for pos in poss:

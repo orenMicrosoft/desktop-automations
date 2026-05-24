@@ -647,3 +647,94 @@ class TestNewsCache:
         out = cache.load_news("PFL")
         assert out is not None and out[0]["title"] == "ok"
 
+
+# ---------------------------------------------------------------- historical scores
+class TestHistoricalScores:
+    def _scored_frame(self, *rows):
+        return pd.DataFrame(rows)
+
+    def test_write_and_load_roundtrip(self, initialised_cache):
+        df = self._scored_frame(
+            {"ticker": "PFL", "composite": 72.5, "s_disc": 80.0,
+             "s_res": 60.0, "s_sust": 70.0, "s_peer": 65.0,
+             "multiplier": 1.0, "buy_label": "BUY-B", "trap_tier": "ok"},
+            {"ticker": "STEW", "composite": 80.0, "s_disc": 90.0,
+             "s_res": 75.0, "s_sust": 70.0, "s_peer": 80.0,
+             "multiplier": 1.05, "buy_label": "BUY-A", "trap_tier": None},
+        )
+        n = cache.persist_historical_scores(df, "2026-05-23")
+        assert n == 2
+        out = cache.load_historical_scores("PFL")
+        assert not out.empty
+        assert list(out["snapshot_date"]) == ["2026-05-23"]
+        assert float(out.iloc[0]["composite"]) == pytest.approx(72.5)
+        assert out.iloc[0]["buy_label"] == "BUY-B"
+
+    def test_load_returns_empty_when_no_rows(self, initialised_cache):
+        out = cache.load_historical_scores("ZZZ")
+        assert out.empty
+
+    def test_load_returns_empty_for_empty_ticker(self, initialised_cache):
+        assert cache.load_historical_scores("").empty
+        assert cache.load_historical_scores("   ").empty
+
+    def test_load_sorted_ascending_by_date(self, initialised_cache):
+        for d, c in [("2026-05-01", 50.0), ("2026-05-10", 55.0),
+                     ("2026-05-05", 52.0)]:
+            cache.persist_historical_scores(
+                self._scored_frame({"ticker": "PFL", "composite": c}), d)
+        out = cache.load_historical_scores("PFL")
+        assert list(out["snapshot_date"]) == [
+            "2026-05-01", "2026-05-05", "2026-05-10"]
+
+    def test_persist_empty_df_returns_zero(self, initialised_cache):
+        assert cache.persist_historical_scores(pd.DataFrame(), "2026-05-23") == 0
+
+    def test_persist_none_df_returns_zero(self, initialised_cache):
+        assert cache.persist_historical_scores(None, "2026-05-23") == 0
+
+    def test_persist_blank_snapshot_returns_zero(self, initialised_cache):
+        df = self._scored_frame({"ticker": "PFL", "composite": 50.0})
+        assert cache.persist_historical_scores(df, "") == 0
+        assert cache.persist_historical_scores(df, "   ") == 0
+        assert cache.persist_historical_scores(df, None) == 0
+
+    def test_persist_skips_blank_ticker(self, initialised_cache):
+        df = self._scored_frame(
+            {"ticker": "", "composite": 50.0},
+            {"ticker": None, "composite": 51.0},
+        )
+        assert cache.persist_historical_scores(df, "2026-05-23") == 0
+
+    def test_persist_normalises_ticker_to_uppercase(self, initialised_cache):
+        df = self._scored_frame({"ticker": " pfl ", "composite": 60.0})
+        cache.persist_historical_scores(df, "2026-05-23")
+        assert not cache.load_historical_scores("PFL").empty
+
+    def test_insert_or_replace_on_same_date(self, initialised_cache):
+        df1 = self._scored_frame({"ticker": "PFL", "composite": 50.0,
+                                   "buy_label": "AVOID"})
+        cache.persist_historical_scores(df1, "2026-05-23")
+        df2 = self._scored_frame({"ticker": "PFL", "composite": 80.0,
+                                   "buy_label": "BUY-A"})
+        cache.persist_historical_scores(df2, "2026-05-23")
+        out = cache.load_historical_scores("PFL")
+        assert len(out) == 1
+        assert float(out.iloc[0]["composite"]) == pytest.approx(80.0)
+        assert out.iloc[0]["buy_label"] == "BUY-A"
+
+    def test_persist_handles_missing_optional_columns(self, initialised_cache):
+        df = self._scored_frame({"ticker": "PFL", "composite": 60.0})
+        cache.persist_historical_scores(df, "2026-05-23")
+        out = cache.load_historical_scores("PFL")
+        assert out.iloc[0]["s_disc"] is None
+        assert out.iloc[0]["buy_label"] is None
+
+    def test_ensure_historical_scores_table_idempotent(self, initialised_cache):
+        with cache.connect(initialised_cache) as conn:
+            cache._ensure_historical_scores_table(conn)
+            cache._ensure_historical_scores_table(conn)
+        df = self._scored_frame({"ticker": "PFL", "composite": 70.0})
+        assert cache.persist_historical_scores(df, "2026-05-23") == 1
+
+
