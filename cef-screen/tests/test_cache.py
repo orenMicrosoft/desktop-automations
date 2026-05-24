@@ -789,3 +789,27 @@ class TestHistoricalScores:
         assert cache.persist_historical_scores(df, "2026-05-23") == 1
 
 
+
+
+
+# ---------------------------------------------------------------- last_universe_refresh_at
+class TestLastUniverseRefreshAt:
+    def test_empty_cache_returns_none(self, initialised_cache):
+        assert cache.last_universe_refresh_at() is None
+
+    def test_returns_max_run_timestamp(self, initialised_cache, mock_universe):
+        cache.write_universe(mock_universe)
+        ts = cache.last_universe_refresh_at()
+        assert ts is not None
+        # ISO format datetime string from datetime.utcnow().isoformat()
+        assert "T" in ts
+
+    def test_blank_timestamp_returns_none(self, initialised_cache):
+        # If somehow run_timestamp is empty string, treat as None
+        with cache.connect() as conn:
+            conn.execute(
+                "INSERT INTO universe_snapshot "
+                "(snapshot_date, ticker, run_timestamp) VALUES (?, ?, ?)",
+                ("2026-05-22", "T01", ""),
+            )
+        assert cache.last_universe_refresh_at() is None

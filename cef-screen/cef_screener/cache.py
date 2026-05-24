@@ -522,6 +522,22 @@ def load_latest_universe() -> pd.DataFrame:
     return df
 
 
+def last_universe_refresh_at() -> str | None:
+    """Return the timestamp of the most recent successful universe write,
+    or ``None`` if the table is empty. This is what the dashboard shows
+    as 'last refreshed at' so users can tell when the data was last
+    pulled from CEFConnect (distinct from the snapshot_date, which is
+    the API's own published date for the market data)."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT MAX(run_timestamp) AS ts FROM universe_snapshot"
+        ).fetchone()
+    if row is None:    # pragma: no cover - aggregate always returns one row
+        return None
+    ts = row["ts"] if hasattr(row, "keys") else row[0]
+    return ts if ts else None
+
+
 def load_price_history(ticker: str) -> pd.DataFrame:
     with connect() as conn:
         df = pd.read_sql_query(

@@ -264,9 +264,17 @@ class TestRunPipeline:
         assert not result.scored.empty
         # All scored funds have a composite + buy_label
         for col in ("composite", "s_disc", "s_res", "s_sust", "s_peer",
-                    "trap_tier", "buy_label"):
+                    "trap_tier", "buy_label",
+                    "z6", "z_rank", "z_rank_total"):
             assert col in result.scored.columns
         assert result.snapshot_date is not None
+        # Round 8: last_refresh_at is populated from the universe write
+        assert result.last_refresh_at is not None
+        # Round 8: z_rank ranges 1..N covering every scored row
+        ranks = sorted(int(r) for r in result.scored["z_rank"].tolist())
+        assert ranks == list(range(1, len(result.scored) + 1))
+        assert all(int(t) == len(result.scored)
+                   for t in result.scored["z_rank_total"].tolist())
 
     def test_with_holdings(self, initialised_cache, tmp_path):
         _populate(initialised_cache)
@@ -341,7 +349,8 @@ class TestRunPipeline:
 class TestBuildInputs:
     def test_empty_histories(self):
         row = {
-            "z_score_1yr": -1.0, "z_score_3m": -0.5, "discount": -8.0,
+            "z_score_1yr": -1.0, "z_score_3m": -0.5, "z_score_6m": -0.7,
+            "discount": -8.0,
             "leverage_ratio": 30, "unii_per_share": 0.1,
             "eps": 0.5, "current_distribution": 0.04,
             "distribution_frequency": "Monthly",
@@ -354,10 +363,20 @@ class TestBuildInputs:
         # Regression: z3 used to be hardcoded to None, leaking "sparse data"
         # into every row's buy_label even when ZScore3M was present.
         assert out["z3"] == -0.5
+        # Round-8: z6 now extracted alongside z1/z3 for dashboard display.
+        assert out["z6"] == -0.7
         assert out["current_discount_pct"] == 8.0   # flipped
         assert out["nav_cagr_3y"] is None
         assert out["composition_quality"] == "incomplete"
         assert out["crisis_maintenance"] is None
+
+    def test_z6_none_when_missing(self):
+        row = {"z_score_1yr": -1.0, "z_score_3m": -0.5,
+               "discount": -8.0, "leverage_ratio": 30,
+               "category_name": "Taxable Bond"}
+        out = engine._build_per_ticker_inputs(
+            row, pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
+        assert out["z6"] is None
 
     def test_z3_none_when_missing(self):
         row = {"z_score_1yr": -1.0, "discount": -8.0,

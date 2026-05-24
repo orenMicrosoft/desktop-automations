@@ -27,6 +27,7 @@ class RunResult:
     scored: pd.DataFrame
     holdings: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    last_refresh_at: str | None = None
 
 
 def _safe_float(v) -> float | None:
@@ -115,6 +116,7 @@ def _build_per_ticker_inputs(
     return {
         "z1": _safe_float(row.get("z_score_1yr")),
         "z3": _safe_float(row.get("z_score_3m")),
+        "z6": _safe_float(row.get("z_score_6m")),
         "current_discount_pct": discount_pct,
         "median_disc_5y": median_disc_5y,
         "dd_2020_pct": dd_2020,
@@ -267,12 +269,14 @@ def run_pipeline(*, positions_path=None) -> RunResult:
                      if not universe.empty and "snapshot_date" in universe.columns
                      else None)
     snapshot_age = _snapshot_age_hours(snapshot_date)
+    last_refresh_at = cache.last_universe_refresh_at()
 
     warnings: list[str] = []
     if universe.empty:
         warnings.append("Universe cache is empty — run `cef-screen refresh` first.")
         return RunResult(snapshot_date, snapshot_age, 0, 0,
-                         universe, universe, [], warnings)
+                         universe, universe, [], warnings,
+                         last_refresh_at=last_refresh_at)
 
     liquid = universe[universe.apply(rules.passes_liquidity, axis=1)]
 
@@ -292,7 +296,7 @@ def run_pipeline(*, positions_path=None) -> RunResult:
                                   sort_col="z_score_1yr")
 
     rows: list[dict] = []
-    for tkr in gate["ticker"]:
+    for rank, tkr in enumerate(gate["ticker"], start=1):
         row = gate.loc[gate["ticker"] == tkr].iloc[0].to_dict()
         ph = cache.load_price_history(tkr)
         dh = cache.load_discount_history(tkr)
@@ -304,7 +308,9 @@ def run_pipeline(*, positions_path=None) -> RunResult:
         peer_pct = _peer_percentile_for(universe, row, own_3y_pct)
         benchmark_cagr = _benchmark_cagr(row.get("category_name"))
         score = _score_one(inputs, peer_pct, benchmark_cagr)
-        rows.append({"ticker": tkr, **row, **inputs, **score, "peer_pct": peer_pct})
+        rows.append({"ticker": tkr, **row, **inputs, **score,
+                     "peer_pct": peer_pct,
+                     "z_rank": rank, "z_rank_total": len(gate)})
 
     scored = pd.DataFrame(rows).sort_values("composite", ascending=False) if rows else pd.DataFrame()
 
@@ -344,6 +350,7 @@ def run_pipeline(*, positions_path=None) -> RunResult:
         scored=scored,
         holdings=holdings,
         warnings=warnings,
+        last_refresh_at=last_refresh_at,
     )
 
 

@@ -21,6 +21,7 @@ import json
 import threading
 import time
 import webbrowser
+from datetime import datetime, timezone
 from typing import Any
 
 import pandas as pd
@@ -114,10 +115,12 @@ input[type=number], input[type=text] { background: #0d1117; color: #e6e6e6;
        border: 1px solid #30363d; border-radius: 4px; padding: 0.3rem 0.5rem;
        font-family: inherit; width: 8rem; }
 form.cfg label { display: grid; grid-template-columns: 14rem 1fr 1fr;
-       gap: 0.5rem; align-items: center; padding: 0.3rem 0;
+       gap: 0.5rem 1rem; align-items: center; padding: 0.5rem 0;
        border-bottom: 1px solid #21262d; }
 form.cfg label b { color: #c9d1d9; font-weight: 500; }
 form.cfg label .default { color: #8b949e; font-size: 0.8rem; }
+form.cfg label .cfg-help { grid-column: 1 / -1; color: #8b949e;
+       font-size: 0.8rem; line-height: 1.4; margin-top: 0.15rem; }
 form.cfg .actions { margin-top: 1rem; display: flex; gap: 0.5rem; }
 .legend { background: #161b22; padding: 0.75rem 1rem; border-left: 3px solid #58a6ff;
        margin: 0.5rem 0 1rem 0; }
@@ -694,6 +697,108 @@ _LEGEND_HTML = """
 """
 
 
+_CONFIG_FIELD_HELP = {
+    "GATEKEEPER_SIZE": (
+        "Number of cheapest funds (by 1Y discount Z-score) to score and "
+        "rank each run. Increase to widen the BUY shortlist (e.g. 50 or "
+        "100); decrease to focus on only the deepest discounts. A larger "
+        "value increases per-refresh API calls and run time linearly."
+    ),
+    "PENALTY_BASE": (
+        "Multiplier applied to the composite score when a trap is "
+        "CONFIRMED/SUSPECT or peer-relative drawdown exceeds the gate. "
+        "Default 0.75 means a flagged fund's composite is reduced by 25%."
+    ),
+    "BUY_TIER_A_MIN": (
+        "Minimum composite score (0-100) to earn the BUY-A label "
+        "(high conviction). Default 75 — funds at or above this score "
+        "are shown in green and are top picks."
+    ),
+    "BUY_TIER_B_MIN": (
+        "Minimum composite score (0-100) to earn the BUY-B label "
+        "(worth a look). Default 60 — funds between BUY_TIER_B_MIN and "
+        "BUY_TIER_A_MIN are flagged as secondary candidates."
+    ),
+    "SELL_Z1_HARD": (
+        "1Y discount Z-score above which a holding is hard-sold (the "
+        "fund's discount has narrowed so much vs. its own 1Y history "
+        "that it's likely overheated). Default 2.0 standard deviations."
+    ),
+    "SELL_Z1_MEAN_REVERT": (
+        "1Y Z-score above which to consider mean-reverting (taking "
+        "profits) IF the 3M Z-score also confirms. Default 1.5σ."
+    ),
+    "SELL_Z3_MEAN_REVERT_CONFIRM": (
+        "3M Z-score required (alongside the 1Y trigger above) before "
+        "issuing a mean-revert SELL. Both must fire. Default 1.0σ."
+    ),
+    "SELL_TARGET_GAIN_PCT": (
+        "Total-return profit-take threshold as a decimal "
+        "(0.10 = +10%). When a holding's gain since purchase exceeds "
+        "this, it's flagged for profit-taking."
+    ),
+    "SELL_STOP_LOSS_PCT": (
+        "Total-return stop-loss as a negative decimal "
+        "(-0.20 = -20%). When a holding's loss exceeds this, it's "
+        "flagged for cut-loss."
+    ),
+}
+
+_WEIGHT_HELP = {
+    "s_disc": (
+        "Weight for the Discount sub-score (how cheap the fund is now "
+        "vs. its own history, via 1Y and 3M Z-scores plus current "
+        "discount level)."
+    ),
+    "s_res": (
+        "Weight for the Resilience sub-score (drawdown history, NAV "
+        "volatility, leverage adequacy — how well the fund survives "
+        "downturns)."
+    ),
+    "s_sust": (
+        "Weight for the Sustainability sub-score (distribution coverage "
+        "by income vs. return-of-capital, recent cut frequency — how "
+        "safe the payout is)."
+    ),
+    "s_peer": (
+        "Weight for the Peer-percentile sub-score (where this fund's "
+        "3Y total return on NAV ranks against its asset-class peers)."
+    ),
+}
+
+
+def _humanize_age(seconds: float | None) -> str:
+    """Friendly relative age string (e.g. "5 min ago", "2h ago")."""
+    if seconds is None:
+        return ""
+    s = max(0.0, float(seconds))
+    if s < 60:
+        return "just now"
+    if s < 3600:
+        return f"{int(s / 60)} min ago"
+    if s < 86400:
+        return f"{int(s / 3600)}h ago"
+    if s < 7 * 86400:
+        return f"{int(s / 86400)}d ago"
+    return ""    # older than a week — just show the absolute timestamp
+
+
+def _format_last_refresh(last_refresh_at: str | None) -> str:
+    """Render '<timestamp> UTC (<X> ago)' for the dashboard header."""
+    if not last_refresh_at:
+        return "—"
+    try:
+        ts = datetime.fromisoformat(last_refresh_at)
+    except (ValueError, TypeError):
+        return html.escape(str(last_refresh_at))
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    age = (datetime.now(timezone.utc) - ts).total_seconds()
+    rel = _humanize_age(age)
+    abs_str = ts.strftime("%Y-%m-%d %H:%M UTC")
+    return f"{html.escape(abs_str)} ({html.escape(rel)})" if rel else html.escape(abs_str)
+
+
 _COMPOSITE_EXPLAINER = """
 <details class="legend" open style="margin-bottom:1rem">
   <summary>📊 How the composite score is computed</summary>
@@ -767,7 +872,9 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
             rows_html = "<p>No results — run a refresh.</p>"
         else:
             head = ("<tr><th>Ticker</th><th>Name</th><th>Category</th>"
-                    "<th>Disc%</th><th>Z1Y</th><th>Composite</th>"
+                    "<th>Disc%</th><th>Z Rank</th>"
+                    "<th>Z1Y</th><th>Z3M</th><th>Z6M</th>"
+                    "<th>Composite</th>"
                     "<th>Trap</th><th>Buy</th><th>Why?</th></tr>")
             body_rows = []
             for _, r in result.scored.iterrows():
@@ -777,6 +884,12 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
                 trap_tier = str(r.get("trap_tier", "") or "")
                 trap_tip = html.escape(_trap_tooltip(trap_tier))
                 why = html.escape(_why_text(r))
+                rank = r.get("z_rank")
+                total = r.get("z_rank_total")
+                rank_cell = (f"{int(rank)}/{int(total)}"
+                             if pd.notna(rank) and pd.notna(total) else "—")
+                rank_tip = ("Position in the gatekeeper Z1Y sort "
+                            "(1 = cheapest vs. own 1Y history)")
                 body_rows.append(
                     f"<tr class='row-link' onclick=\"window.location='/inspect/{ticker}'\">"
                     f"<td><a href='/inspect/{ticker}' style='color:#58a6ff'>"
@@ -784,7 +897,10 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
                     f"<td>{html.escape(str(r.get('name', '') or ''))}</td>"
                     f"<td>{html.escape(str(r.get('category_name', '') or ''))}</td>"
                     f"<td>{_format_pct(r.get('current_discount_pct'))}</td>"
+                    f"<td title='{html.escape(rank_tip)}'>{rank_cell}</td>"
                     f"<td>{_format_pct(r.get('z1'))}</td>"
+                    f"<td>{_format_pct(r.get('z3'))}</td>"
+                    f"<td>{_format_pct(r.get('z6'))}</td>"
                     f"<td>{_format_pct(r.get('composite'), 1)}</td>"
                     f"<td title='{trap_tip}'>{html.escape(trap_tier)}</td>"
                     f"<td class='{cls}' title='{html.escape(label)}'>"
@@ -793,10 +909,12 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
                 )
             rows_html = ("<table class='sortable'>" + head + "".join(body_rows) + "</table>")
         snap = html.escape(str(result.snapshot_date or "—"))
+        last_refresh = _format_last_refresh(result.last_refresh_at)
         data_banner = _data_completeness_banner(result.scored)
         body = (f"<p>Snapshot: <b>{snap}</b> · "
                 f"Universe: {result.universe_size} · "
-                f"Liquid: {result.liquid_universe_size}</p>"
+                f"Liquid: {result.liquid_universe_size} · "
+                f"Last refresh: <b>{last_refresh}</b></p>"
                 f"{_warnings_html(result.warnings)}"
                 f"{data_banner}"
                 f"{_LEGEND_HTML}{rows_html}")
@@ -850,29 +968,39 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
                 continue    # rendered separately
             cur = eff[key]
             default = defaults[key]
+            help_text = _CONFIG_FIELD_HELP.get(key, "")
+            help_html = (f"<small class='cfg-help'>{html.escape(help_text)}</small>"
+                         if help_text else "")
             fields.append(
                 f"<label><b>{html.escape(key)}</b>"
                 f"<input name='{html.escape(key)}' "
                 f"type='number' step='any' value='{html.escape(str(cur))}'/>"
                 f"<span class='default'>default: {html.escape(str(default))}</span>"
+                f"{help_html}"
                 f"</label>"
             )
         # Weights — 4 sliders + numeric inputs
         w = eff["COMPOSITE_FACTOR_WEIGHTS"]
         w_def = defaults["COMPOSITE_FACTOR_WEIGHTS"]
         for k in ("s_disc", "s_res", "s_sust", "s_peer"):
+            help_text = _WEIGHT_HELP.get(k, "")
+            help_html = (f"<small class='cfg-help'>{html.escape(help_text)}</small>"
+                         if help_text else "")
             fields.append(
                 f"<label><b>weight: {html.escape(k)}</b>"
                 f"<input name='w_{html.escape(k)}' "
                 f"type='number' step='0.05' min='0' value='{html.escape(str(w.get(k, 0.25)))}'/>"
                 f"<span class='default'>default: {html.escape(str(w_def.get(k, 0.25)))}</span>"
+                f"{help_html}"
                 f"</label>"
             )
         snap = html.escape(str(result.snapshot_date or "—"))
+        last_refresh = _format_last_refresh(result.last_refresh_at)
         body = (
             f"{flash}"
             f"<p>Snapshot: <b>{snap}</b> · "
-            f"Cache dir: <code>{html.escape(str(config.cache_dir()))}</code></p>"
+            f"Cache dir: <code>{html.escape(str(config.cache_dir()))}</code> · "
+            f"Last refresh: <b>{last_refresh}</b></p>"
             f"{_COMPOSITE_EXPLAINER}"
             f"<form class='cfg' method='post' action='/api/config'>"
             f"{''.join(fields)}"
@@ -950,6 +1078,12 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
             ("Discount %", _format_pct(r.get("current_discount_pct"))),
             ("Median discount 5Y %", _format_pct(r.get("median_disc_5y"))),
             ("Z 1Y", _format_pct(r.get("z1"))),
+            ("Z 3M", _format_pct(r.get("z3"))),
+            ("Z 6M", _format_pct(r.get("z6"))),
+            ("Z Rank (1Y)",
+             f"{int(r.get('z_rank'))}/{int(r.get('z_rank_total'))}"
+             if pd.notna(r.get("z_rank")) and pd.notna(r.get("z_rank_total"))
+             else "—"),
             ("NAV CAGR 3Y", _format_pct(r.get("nav_cagr_3y"), 4)),
             ("NAV total return 3Y", _format_pct(r.get("nav_total_return_3y"), 4)),
             ("Distribution rate (NAV)", _format_pct(r.get("distribution_rate_on_nav"), 4)),
@@ -1092,6 +1226,11 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
                 if not u.empty and "snapshot_date" in u.columns:
                     summary = dict(summary)
                     summary["snapshot_date"] = str(u["snapshot_date"].iloc[0])
+                last_refresh = cache.last_universe_refresh_at()
+                if last_refresh:
+                    if not isinstance(summary, dict):    # pragma: no cover
+                        summary = dict(summary)
+                    summary["last_refresh_at"] = last_refresh
             except Exception:    # pragma: no cover - defensive
                 pass
             msg = "Full refresh complete" if full else "Snapshot refresh complete"

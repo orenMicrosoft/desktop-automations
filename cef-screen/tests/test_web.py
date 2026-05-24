@@ -19,14 +19,17 @@ def _reset_cache():
     web._CACHE.clear()
 
 
-def _make_run_result(*, with_scored=True, with_holdings=False, warnings=None):
+def _make_run_result(*, with_scored=True, with_holdings=False, warnings=None,
+                     last_refresh_at="2026-05-24T09:00:00"):
     if with_scored:
         scored = pd.DataFrame([{
             "ticker": "T00", "name": "Fund 0",
             "category_name": "Taxable Bond",
             "current_discount_pct": 8.5,
             "median_disc_5y": 7.0,
-            "z1": -1.8, "nav_cagr_3y": 0.05,
+            "z1": -1.8, "z3": -0.9, "z6": -1.2,
+            "z_rank": 1, "z_rank_total": 30,
+            "nav_cagr_3y": 0.05,
             "nav_total_return_3y": 0.06,
             "distribution_rate_on_nav": 0.08,
             "coverage": 1.1, "composite": 78.5,
@@ -41,7 +44,9 @@ def _make_run_result(*, with_scored=True, with_holdings=False, warnings=None):
             "category_name": "Municipal Bond",
             "current_discount_pct": 4.0,
             "median_disc_5y": 5.0,
-            "z1": -0.5, "nav_cagr_3y": 0.03,
+            "z1": -0.5, "z3": 0.3, "z6": -0.1,
+            "z_rank": 12, "z_rank_total": 30,
+            "nav_cagr_3y": 0.03,
             "nav_total_return_3y": 0.04,
             "distribution_rate_on_nav": 0.06,
             "coverage": 0.9, "composite": 55.0,
@@ -78,6 +83,7 @@ def _make_run_result(*, with_scored=True, with_holdings=False, warnings=None):
         scored=scored,
         holdings=holdings,
         warnings=warnings or [],
+        last_refresh_at=last_refresh_at,
     )
 
 
@@ -1229,3 +1235,221 @@ class TestSortableTables:
         assert "sort-asc" in js and "sort-desc" in js
         # Click should toggle from asc -> desc when already asc
         assert "contains('sort-asc')" in js
+
+
+
+# ====================================================================
+# Round-8 tests — last refresh display, all Z-scores, config help text
+# ====================================================================
+class TestHumanizeAge:
+    def test_none_returns_empty(self):
+        assert web._humanize_age(None) == ""
+
+    def test_zero_seconds(self):
+        assert web._humanize_age(0) == "just now"
+
+    def test_negative_seconds_clamped_to_just_now(self):
+        # Defensive: clock skew shouldn't crash, just treat as "now"
+        assert web._humanize_age(-5) == "just now"
+
+    def test_under_minute(self):
+        assert web._humanize_age(45) == "just now"
+
+    def test_one_minute_exactly(self):
+        assert web._humanize_age(60) == "1 min ago"
+
+    def test_minutes(self):
+        assert web._humanize_age(300) == "5 min ago"
+
+    def test_hours(self):
+        assert web._humanize_age(2 * 3600 + 30 * 60) == "2h ago"
+
+    def test_days(self):
+        assert web._humanize_age(3 * 86400) == "3d ago"
+
+    def test_over_a_week_returns_empty(self):
+        # Caller renders absolute timestamp when relative is empty
+        assert web._humanize_age(10 * 86400) == ""
+
+
+class TestFormatLastRefresh:
+    def test_none_returns_dash(self):
+        assert web._format_last_refresh(None) == "—"
+
+    def test_empty_string_returns_dash(self):
+        assert web._format_last_refresh("") == "—"
+
+    def test_iso_timestamp_includes_age(self):
+        from datetime import datetime, timedelta, timezone
+        ts = (datetime.now(timezone.utc) - timedelta(minutes=5)).replace(microsecond=0)
+        out = web._format_last_refresh(ts.isoformat())
+        assert "UTC" in out
+        assert "min ago" in out
+
+    def test_naive_iso_assumed_utc(self):
+        from datetime import datetime, timedelta, timezone
+        ts = (datetime.now(timezone.utc) - timedelta(hours=2)).replace(microsecond=0, tzinfo=None)
+        out = web._format_last_refresh(ts.isoformat())
+        assert "UTC" in out
+        assert "h ago" in out
+
+    def test_garbage_returns_escaped_raw(self):
+        out = web._format_last_refresh("not-a-timestamp")
+        assert out == "not-a-timestamp"
+
+    def test_ancient_timestamp_omits_relative(self):
+        # Older than a week → no "X ago" suffix, just absolute
+        out = web._format_last_refresh("2020-01-01T00:00:00")
+        assert "2020-01-01" in out
+        assert "ago" not in out
+
+
+class TestBuyZScoresColumns:
+    def test_buy_page_renders_z3m_header(self, client):
+        with patch("cef_screener.web._get_result", return_value=_make_run_result()):
+            resp = client.get("/")
+        body = resp.get_data(as_text=True)
+        assert "<th>Z3M</th>" in body
+        assert "<th>Z6M</th>" in body
+
+    def test_buy_page_renders_z3_and_z6_values(self, client):
+        with patch("cef_screener.web._get_result", return_value=_make_run_result()):
+            resp = client.get("/")
+        body = resp.get_data(as_text=True)
+        # T00 z3 = -0.9, z6 = -1.2 from fixture
+        assert "-0.90" in body or "-0.9" in body
+        assert "-1.20" in body or "-1.2" in body
+
+
+class TestInspectZScoresRows:
+    def test_inspect_renders_z3m_and_z6m_rows(self, client):
+        with patch("cef_screener.web._get_result", return_value=_make_run_result()):
+            resp = client.get("/inspect/T00")
+        body = resp.get_data(as_text=True)
+        assert "Z 3M" in body
+        assert "Z 6M" in body
+
+
+class TestLastRefreshOnPages:
+    def test_buy_page_shows_last_refresh(self, client):
+        with patch("cef_screener.web._get_result", return_value=_make_run_result()):
+            resp = client.get("/")
+        body = resp.get_data(as_text=True)
+        assert "Last refresh:" in body
+        assert "UTC" in body
+
+    def test_buy_page_no_refresh_shows_dash(self, client):
+        with patch("cef_screener.web._get_result",
+                   return_value=_make_run_result(last_refresh_at=None)):
+            resp = client.get("/")
+        body = resp.get_data(as_text=True)
+        assert "Last refresh:" in body
+
+    def test_config_page_shows_last_refresh(self, client):
+        with patch("cef_screener.web._get_result", return_value=_make_run_result()):
+            resp = client.get("/config")
+        body = resp.get_data(as_text=True)
+        assert "Last refresh:" in body
+
+
+class TestConfigHelpText:
+    def test_gatekeeper_size_help_rendered(self, client):
+        with patch("cef_screener.web._get_result", return_value=_make_run_result()):
+            resp = client.get("/config")
+        body = resp.get_data(as_text=True)
+        assert "Number of cheapest funds" in body
+        assert "cfg-help" in body
+
+    def test_buy_tier_a_help_rendered(self, client):
+        with patch("cef_screener.web._get_result", return_value=_make_run_result()):
+            resp = client.get("/config")
+        body = resp.get_data(as_text=True)
+        assert "BUY-A label" in body
+
+    def test_weight_help_rendered(self, client):
+        with patch("cef_screener.web._get_result", return_value=_make_run_result()):
+            resp = client.get("/config")
+        body = resp.get_data(as_text=True)
+        assert "Discount sub-score" in body
+        assert "Resilience sub-score" in body
+        assert "Sustainability sub-score" in body
+        assert "Peer-percentile sub-score" in body
+
+    def test_help_dict_covers_every_overridable_scalar(self):
+        # Self-test: any new OVERRIDABLE scalar should get a help entry
+        # so users always see an explanation.
+        missing = [k for k in config.OVERRIDABLE
+                   if k != "COMPOSITE_FACTOR_WEIGHTS"
+                   and k not in web._CONFIG_FIELD_HELP]
+        assert missing == [], f"OVERRIDABLE missing help text: {missing}"
+
+    def test_weight_help_covers_all_four_factors(self):
+        for k in ("s_disc", "s_res", "s_sust", "s_peer"):
+            assert k in web._WEIGHT_HELP
+
+
+class TestRefreshLastRefreshInSummary:
+    def test_refresh_includes_last_refresh_at(self, client, monkeypatch):
+        def fake_refresh(**kw):
+            return {"universe": 5, "news": 0}
+        monkeypatch.setattr(web.engine, "refresh_universe", fake_refresh)
+        monkeypatch.setattr(web.cache, "last_universe_refresh_at",
+                            lambda: "2026-05-24T09:00:00")
+        # populate universe so snapshot_date branch also runs
+        monkeypatch.setattr(web.cache, "load_latest_universe",
+                            lambda: pd.DataFrame([{"snapshot_date": "2026-05-22"}]))
+        resp = client.post("/api/refresh")
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["summary"]["last_refresh_at"] == "2026-05-24T09:00:00"
+
+    def test_refresh_omits_last_refresh_when_unknown(self, client, monkeypatch):
+        monkeypatch.setattr(web.engine, "refresh_universe",
+                            lambda **kw: {"universe": 0})
+        monkeypatch.setattr(web.cache, "last_universe_refresh_at", lambda: None)
+        monkeypatch.setattr(web.cache, "load_latest_universe", lambda: pd.DataFrame())
+        resp = client.post("/api/refresh")
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert "last_refresh_at" not in data["summary"]
+
+class TestZRankColumn:
+    def test_buy_page_renders_z_rank_header(self, client):
+        with patch("cef_screener.web._get_result", return_value=_make_run_result()):
+            resp = client.get("/")
+        body = resp.get_data(as_text=True)
+        assert "<th>Z Rank</th>" in body
+
+    def test_buy_page_renders_rank_values(self, client):
+        with patch("cef_screener.web._get_result", return_value=_make_run_result()):
+            resp = client.get("/")
+        body = resp.get_data(as_text=True)
+        # T00 rank 1/30, T01 rank 12/30 from fixture
+        assert "1/30" in body
+        assert "12/30" in body
+
+    def test_buy_page_rank_dash_when_missing(self, client):
+        r = _make_run_result()
+        r.scored.loc[0, "z_rank"] = None
+        r.scored.loc[0, "z_rank_total"] = None
+        with patch("cef_screener.web._get_result", return_value=r):
+            resp = client.get("/")
+        body = resp.get_data(as_text=True)
+        # Both rows render, T00's rank now blank/dash
+        assert "T00" in body and "T01" in body
+
+    def test_inspect_renders_z_rank_row(self, client):
+        with patch("cef_screener.web._get_result", return_value=_make_run_result()):
+            resp = client.get("/inspect/T00")
+        body = resp.get_data(as_text=True)
+        assert "Z Rank (1Y)" in body
+        assert "1/30" in body
+
+    def test_inspect_rank_dash_when_missing(self, client):
+        r = _make_run_result()
+        r.scored.loc[0, "z_rank"] = None
+        r.scored.loc[0, "z_rank_total"] = None
+        with patch("cef_screener.web._get_result", return_value=r):
+            resp = client.get("/inspect/T00")
+        body = resp.get_data(as_text=True)
+        assert "Z Rank (1Y)" in body
