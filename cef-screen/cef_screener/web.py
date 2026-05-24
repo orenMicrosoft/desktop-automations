@@ -137,6 +137,10 @@ tr.row-link { cursor: pointer; }
 tr.row-link:hover { background: #21262d; }
 td.why { color: #8b949e; font-size: 0.85rem; max-width: 22rem;
        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.sortable th { cursor: pointer; user-select: none; position: relative; }
+table.sortable th:hover { background: #21262d; }
+table.sortable th.sort-asc::after  { content: " ▲"; color: #58a6ff; }
+table.sortable th.sort-desc::after { content: " ▼"; color: #58a6ff; }
 """
 
 
@@ -169,13 +173,79 @@ _NAV = """
 """
 
 
+_SORT_JS = """
+(function(){
+  function parseCell(text){
+    var t = (text || '').trim();
+    if (t === '' || t === '\\u2014') return null;
+    var n = parseFloat(t.replace(/[%+,\\s]/g, ''));
+    return isNaN(n) ? t : n;
+  }
+  function isNumericColumn(rows, idx){
+    var seen = 0;
+    for (var i = 0; i < rows.length; i++){
+      var v = parseCell(rows[i].cells[idx] && rows[i].cells[idx].textContent);
+      if (v === null) continue;
+      if (typeof v !== 'number') return false;
+      seen++;
+    }
+    return seen > 0;
+  }
+  function sortTable(table, idx, th){
+    var rows = Array.from(table.querySelectorAll('tr')).filter(function(r){
+      return r.cells.length > 0 && r.parentNode.tagName !== 'THEAD'
+             && r.querySelectorAll('th').length === 0;
+    });
+    if (!rows.length) return;
+    var dir = th.classList.contains('sort-asc') ? 'desc' : 'asc';
+    table.querySelectorAll('th').forEach(function(h){
+      h.classList.remove('sort-asc', 'sort-desc');
+    });
+    th.classList.add(dir === 'asc' ? 'sort-asc' : 'sort-desc');
+    var numeric = isNumericColumn(rows, idx);
+    rows.sort(function(a, b){
+      var av = parseCell(a.cells[idx] && a.cells[idx].textContent);
+      var bv = parseCell(b.cells[idx] && b.cells[idx].textContent);
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1;       // nulls always last
+      if (bv === null) return -1;
+      if (numeric){
+        return dir === 'asc' ? av - bv : bv - av;
+      }
+      var sa = String(av).toLowerCase(), sb = String(bv).toLowerCase();
+      return dir === 'asc' ? sa.localeCompare(sb) : sb.localeCompare(sa);
+    });
+    var parent = rows[0].parentNode;
+    rows.forEach(function(r){ parent.appendChild(r); });
+  }
+  function activate(){
+    document.querySelectorAll('table.sortable').forEach(function(table){
+      var headers = table.querySelectorAll('th');
+      headers.forEach(function(th, idx){
+        th.addEventListener('click', function(e){
+          e.stopPropagation();
+          sortTable(table, idx, th);
+        });
+      });
+    });
+  }
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', activate);
+  } else {
+    activate();
+  }
+})();
+"""
+
+
 def _layout(title: str, body: str) -> str:
     title_safe = html.escape(title)
     return (f"<!doctype html><html><head><meta charset='utf-8'>"
             f"<title>{title_safe} — CEF Screener</title>"
             f"<style>{_BASE_CSS}</style></head><body>"
             f"<header><h1>CEF Screener — {title_safe}</h1></header>"
-            f"{_NAV}<main>{body}</main></body></html>")
+            f"{_NAV}<main>{body}</main>"
+            f"<script>{_SORT_JS}</script></body></html>")
 
 
 def _warnings_html(warnings: list[str]) -> str:
@@ -266,6 +336,108 @@ def _present(v: Any) -> bool:
     return True
 
 
+_NEWS_SIGNALS = (
+    # Each entry is (keyword tuple, signal label, explanation)
+    # Checked in order — first match wins, so put most-specific rules first.
+    (("rights offering", "rights issuance"), "DILUTIVE",
+     "Rights offerings dilute existing holders and usually pressure NAV "
+     "near-term — often a tactical wait-for-reset signal."),
+    (("secondary offering", "share issuance", "follow-on"), "DILUTIVE",
+     "New share issuance can pressure the premium/discount short-term."),
+    (("tender offer", "buyback", "repurchase program", "share repurchase"),
+     "ACCRETIVE",
+     "Buybacks/tenders narrow the discount and are NAV-accretive — "
+     "usually a bullish catalyst."),
+    (("open-end", "open ending", "liquidation", "termination", "wind down",
+      "wind-down"), "CATALYST",
+     "Liquidation / open-ending forces the discount toward zero — "
+     "typically a one-shot positive catalyst for discounted CEFs."),
+    (("merger", "acquisition", "reorganization"), "CATALYST",
+     "Combinations often trigger a discount close — usually bullish if "
+     "you bought at a wide discount."),
+    (("distribution cut", "dividend cut", "reduced distribution",
+      "lower distribution", "decreas"), "SELL SIGNAL",
+     "Distribution cuts crush the s_sust score and often spark forced "
+     "selling — reassess before adding."),
+    (("distribution increase", "dividend increase", "raises distribution",
+      "raised distribution", "distribution hike", "dividend hike",
+      "distribution boost", "dividend boost"), "BUY SIGNAL",
+     "A hike when coverage > 1.0× is a credibility signal — boosts the "
+     "s_sust score."),
+    (("special distribution", "year-end distribution", "capital gain"),
+     "MIXED",
+     "Special distributions juice the reported yield but typically come "
+     "out of NAV — not a fundamental buy signal."),
+    (("return of capital", "ROC"), "MIXED",
+     "Heavy ROC inflates the distribution rate but erodes NAV — watch "
+     "the s_sust coverage ratio."),
+    (("manager change", "portfolio manager", "sub-adviser", "subadviser",
+      "adviser change", "advisor change"), "STRATEGY RISK",
+     "Manager transitions break the strategy-continuity assumption — "
+     "re-evaluate the thesis."),
+    (("SEC", "lawsuit", "investigation", "probe", "subpoena",
+      "settlement"), "GOVERNANCE RISK",
+     "Material governance / legal risk — consider trimming until "
+     "resolved."),
+    (("activist", "13D", "proxy", "board"), "CATALYST",
+     "Activist involvement often drives discount-narrowing actions — "
+     "watch for tender offers or open-ending."),
+    (("downgrade", "rating cut"), "BEARISH",
+     "Credit downgrade in the holdings increases NAV risk — peer-relative "
+     "weakness likely."),
+    (("upgrade", "rating raised"), "BULLISH",
+     "Credit upgrade in the holdings supports NAV — usually a tailwind."),
+    (("rate cut", "fed cut", "fed pause"), "BULLISH",
+     "Lower rates compress leverage costs and support bond/CEF NAVs."),
+    (("rate hike", "rate increase", "tightening"), "BEARISH",
+     "Higher rates raise leverage costs and pressure CEF NAVs."),
+    (("leverage", "credit facility", "borrowing"), "CONTEXT",
+     "Leverage drives both yield and downside — re-check in the current "
+     "rate environment."),
+    (("monthly distribution", "declares distribution", "distribution declared",
+      "declares monthly"), "ROUTINE",
+     "Routine declaration — only matters if the amount changed vs the "
+     "prior period."),
+    (("quarterly report", "earnings", "fiscal", "annual report",
+      "shareholder report"), "ROUTINE",
+     "Routine financial filing — useful context, rarely a standalone "
+     "catalyst."),
+)
+
+
+def _news_relevance(title: str) -> tuple[str, str]:
+    """Return (signal_label, explanation) for a news headline.
+
+    Pure keyword heuristic — first matching rule wins. Falls back to a
+    generic note when nothing matches.
+    """
+    t = (title or "").lower()
+    for keywords, label, explanation in _NEWS_SIGNALS:
+        for kw in keywords:
+            if kw.lower() in t:
+                return label, explanation
+    return ("GENERAL",
+            "General market or fund news — read the headline for context. "
+            "Rarely a decisive buy/sell signal on its own.")
+
+
+_SIGNAL_COLOURS = {
+    "BUY SIGNAL": "#3fb950",
+    "BULLISH": "#3fb950",
+    "ACCRETIVE": "#3fb950",
+    "CATALYST": "#3fb950",
+    "SELL SIGNAL": "#f85149",
+    "BEARISH": "#f85149",
+    "DILUTIVE": "#f85149",
+    "GOVERNANCE RISK": "#f85149",
+    "STRATEGY RISK": "#d29922",
+    "MIXED": "#d29922",
+    "CONTEXT": "#8b949e",
+    "ROUTINE": "#8b949e",
+    "GENERAL": "#8b949e",
+}
+
+
 def _news_html(ticker: str) -> str:
     """Render up to 5 cached/fetched headlines for a ticker as an HTML block."""
     try:
@@ -278,14 +450,34 @@ def _news_html(ticker: str) -> str:
                 f"<code>{html.escape(ticker)}</code>.</div>")
     rows = []
     for it in items:
-        title = html.escape(it.get("title", ""))
+        raw_title = it.get("title", "") or ""
+        title = html.escape(raw_title)
         link = it.get("link", "") or "#"
         link_safe = html.escape(link, quote=True)
         pub = html.escape(it.get("published", "") or "")
+        raw_summary = (it.get("summary") or "").strip()
+        # Use signal-keyword logic on title + summary so the relevance
+        # explanation reflects the article body too.
+        signal, why = _news_relevance(f"{raw_title} {raw_summary}")
+        signal_safe = html.escape(signal)
+        why_safe = html.escape(why)
+        colour = _SIGNAL_COLOURS.get(signal, "#8b949e")
+        summary_html = ""
+        if raw_summary:
+            summary_html = (
+                f"<div style='color:#c9d1d9;font-size:0.85rem;"
+                f"margin-top:0.25rem'>{html.escape(raw_summary)}</div>"
+            )
         rows.append(
-            f"<li><a href='{link_safe}' target='_blank' rel='noopener' "
-            f"style='color:#58a6ff'>{title}</a>"
-            f"<div class='muted' style='font-size:0.8rem'>{pub}</div></li>"
+            f"<li style='margin-bottom:0.9rem'>"
+            f"<a href='{link_safe}' target='_blank' rel='noopener' "
+            f"style='color:#58a6ff;font-weight:500'>{title}</a>"
+            f"<div class='muted' style='font-size:0.8rem'>{pub}</div>"
+            f"{summary_html}"
+            f"<div style='font-size:0.85rem;margin-top:0.25rem'>"
+            f"<b style='color:{colour}'>{signal_safe}</b> — "
+            f"<span style='color:#c9d1d9'>{why_safe}</span></div>"
+            f"</li>"
         )
     return ("<h3>📰 Recent news</h3><ul style='padding-left:1.2rem'>"
             + "".join(rows) + "</ul>")
@@ -328,20 +520,6 @@ def _past_status_html(ticker: str) -> str:
                 "this section starts populating after the next pipeline run. "
                 "Click <b>Quick refresh</b> or <b>Full refresh</b> above to "
                 "force a run.</div>")
-    composites = [float(v) for v in hist["composite"].tolist()
-                  if v is not None and not (isinstance(v, float) and v != v)]
-    spark = _sparkline(composites)
-    first = hist.iloc[0]
-    last = hist.iloc[-1]
-    delta = None
-    if _present(last.get("composite")) and _present(first.get("composite")):
-        delta = float(last["composite"]) - float(first["composite"])
-    delta_str = ""
-    if delta is not None:
-        arrow = "▲" if delta > 0 else ("▼" if delta < 0 else "▶")
-        colour = "#3fb950" if delta > 0 else ("#f85149" if delta < 0 else "#8b949e")
-        delta_str = (f" <span style='color:{colour}'>{arrow} "
-                     f"{abs(delta):.1f}</span>")
     head = ("<tr><th>Date</th><th>Composite</th><th>S Disc</th>"
             "<th>S Res</th><th>S Sust</th><th>S Peer</th>"
             "<th>Mult</th><th>Label</th></tr>")
@@ -359,11 +537,42 @@ def _past_status_html(ticker: str) -> str:
             f"<td>{html.escape(str(r.get('buy_label') or ''))}</td>"
             "</tr>"
         )
+    table = (f"<table class='sortable' style='font-size:0.85rem'>"
+             f"{head}{''.join(row_html)}</table>")
+
+    # One snapshot → no drift to show; explain instead of rendering noise.
+    n = len(hist)
+    if n < 2:
+        snap_date = html.escape(str(hist.iloc[0].get('snapshot_date') or ''))
+        return (
+            "<h3>📋 Past status — score drift</h3>"
+            f"<div class='placeholder'>First snapshot recorded on "
+            f"<b>{snap_date}</b>. Score drift will appear here after the "
+            f"next pipeline run (sparkline + change-vs-first below the "
+            f"snapshot table).</div>"
+            f"{table}"
+        )
+
+    composites = [float(v) for v in hist["composite"].tolist()
+                  if v is not None and not (isinstance(v, float) and v != v)]
+    spark = _sparkline(composites)
+    first = hist.iloc[0]
+    last = hist.iloc[-1]
+    delta = None
+    if _present(last.get("composite")) and _present(first.get("composite")):
+        delta = float(last["composite"]) - float(first["composite"])
+    delta_str = ""
+    if delta is not None:
+        arrow = "▲" if delta > 0 else ("▼" if delta < 0 else "▶")
+        colour = ("#3fb950" if delta > 0
+                  else ("#f85149" if delta < 0 else "#8b949e"))
+        delta_str = (f" <span style='color:{colour}'>{arrow} "
+                     f"{abs(delta):.1f} vs first</span>")
     return (
-        f"<h3>📋 Past status — score drift ({len(hist)} snapshots)</h3>"
+        f"<h3>📋 Past status — score drift ({n} snapshots)</h3>"
         f"<div style='font-family:monospace;font-size:1.4rem;letter-spacing:2px'>"
         f"{html.escape(spark)}{delta_str}</div>"
-        f"<table style='font-size:0.85rem'>{head}{''.join(row_html)}</table>"
+        f"{table}"
     )
 
 
@@ -482,6 +691,63 @@ _LEGEND_HTML = """
 """
 
 
+_COMPOSITE_EXPLAINER = """
+<details class="legend" open style="margin-bottom:1rem">
+  <summary>📊 How the composite score is computed</summary>
+  <p style="margin:0.5rem 0"><b>Composite</b> = weighted average of four
+    sub-scores (each 0–100), then multiplied by a quality multiplier:</p>
+  <pre style="background:#0d1117;padding:0.75rem 1rem;border-radius:4px;
+       margin:0.5rem 0;font-size:0.85rem;color:#c9d1d9;white-space:pre-wrap">
+composite = (w_disc·s_disc + w_res·s_res + w_sust·s_sust + w_peer·s_peer)
+            × multiplier</pre>
+  <p style="margin:0.5rem 0 0.25rem"><b>The four sub-scores:</b></p>
+  <ul style="margin-top:0.25rem">
+    <li><b>s_disc — Discount opportunity (25%)</b>
+      Where today's discount sits inside the fund's own 5-year
+      discount range. Wide-vs-history → high score. Built from
+      <code>current_discount_pct</code> and the median + extremes
+      of <code>discount_history</code>.</li>
+    <li><b>s_res — NAV resilience (25%)</b>
+      How well the fund's NAV held up during the 2020 (COVID) and
+      2022 (rate-hike) drawdowns, normalized against peers. Smaller
+      drawdowns → high score.</li>
+    <li><b>s_sust — Distribution sustainability (25%)</b>
+      Does the fund's NAV growth cover its distribution rate?
+      <code>coverage = nav_cagr_3y ÷ distribution_rate</code>. A
+      coverage of 1.0 means earnings exactly cover payouts; above
+      1.0 builds NAV, below 1.0 erodes it (the classic ROC trap).</li>
+    <li><b>s_peer — Peer-relative 3y return (25%)</b>
+      Percentile rank of this fund's <code>yr3_ret_on_nav</code>
+      vs. all gatekeeper funds in the same Morningstar category.
+      Top quartile → high score.</li>
+  </ul>
+  <p style="margin:0.5rem 0 0.25rem"><b>The multiplier (penalty/bonus):</b></p>
+  <ul style="margin-top:0.25rem">
+    <li>Starts at <b>1.00</b>.</li>
+    <li>Drops to <code>PENALTY_BASE</code> (default 0.75) when a
+      trap is <b>CONFIRMED</b> or <b>SUSPECT</b>, or when peer-relative
+      drawdown exceeds the gate.</li>
+    <li>Smaller penalties (~0.9) apply for sparse history, missing
+      coverage data, or other data-quality flags.</li>
+  </ul>
+  <p style="margin:0.5rem 0 0.25rem"><b>Then the buy label:</b></p>
+  <ul style="margin-top:0.25rem">
+    <li><b class="label-buy-a">BUY-A</b> — composite ≥
+      <code>BUY_TIER_A_MIN</code> (75) and no trap.</li>
+    <li><b class="label-buy-b">BUY-B</b> — composite ≥
+      <code>BUY_TIER_B_MIN</code> (60) and no <b>CONFIRMED</b> trap.</li>
+    <li><b class="label-avoid">AVOID</b> — below B threshold, or trap
+      confirmed at any score.</li>
+  </ul>
+  <p style="margin:0.5rem 0 0" class="muted">
+    The weights below are normalized to sum to 1.0 at scoring time, so
+    you can use any positive values. Click any fund row on the BUY
+    page → "Inspect" to see all four sub-scores broken down.
+  </p>
+</details>
+"""
+
+
 # ---------------------------------------------------------------- app factory
 def create_app() -> Flask:
     app = Flask(__name__)
@@ -522,7 +788,7 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
                     f"{html.escape(label)}</td>"
                     f"<td class='why' title='{why}'>{why}</td></tr>"
                 )
-            rows_html = ("<table>" + head + "".join(body_rows) + "</table>")
+            rows_html = ("<table class='sortable'>" + head + "".join(body_rows) + "</table>")
         snap = html.escape(str(result.snapshot_date or "—"))
         data_banner = _data_completeness_banner(result.scored)
         body = (f"<p>Snapshot: <b>{snap}</b> · "
@@ -558,7 +824,7 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
                 f"<td>{html.escape(str(sig.get('reason', '—') or '—'))}</td></tr>"
             )
         body = (_warnings_html(result.warnings)
-                + "<table>" + head + "".join(rows) + "</table>")
+                + "<table class='sortable'>" + head + "".join(rows) + "</table>")
         return _layout("SELL", body)
 
     @app.route("/config")
@@ -604,6 +870,7 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
             f"{flash}"
             f"<p>Snapshot: <b>{snap}</b> · "
             f"Cache dir: <code>{html.escape(str(config.cache_dir()))}</code></p>"
+            f"{_COMPOSITE_EXPLAINER}"
             f"<form class='cfg' method='post' action='/api/config'>"
             f"{''.join(fields)}"
             f"<div class='actions'>"
@@ -798,7 +1065,7 @@ def _register_routes(app: Flask) -> None:    # noqa: C901
             f"<button type='submit'>Re-rank</button>"
             f"<a class='btn' href='/lab' style='text-decoration:none;display:inline-block'>Reset</a>"
             "</div></form>"
-            "<table style='margin-top:1rem'>"
+            "<table class='sortable' style='margin-top:1rem'>"
             "<tr><th>#</th><th>Ticker</th><th>Name</th>"
             "<th>Original</th><th>New</th><th>Δ rank</th></tr>"
             + "".join(rows_html) +

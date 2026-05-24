@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS news_headlines (
     title        TEXT NOT NULL,
     link         TEXT,
     published    TEXT,
+    summary      TEXT,
     PRIMARY KEY (ticker, idx)
 );
 
@@ -579,14 +580,20 @@ CREATE TABLE IF NOT EXISTS news_headlines (
     title        TEXT NOT NULL,
     link         TEXT,
     published    TEXT,
+    summary      TEXT,
     PRIMARY KEY (ticker, idx)
 )
 """
 
 
 def _ensure_news_table(conn: sqlite3.Connection) -> None:
-    """Idempotent: create news_headlines if a legacy DB is missing it."""
+    """Idempotent: create news_headlines if missing, add summary column
+    on legacy DBs (schema upgrade without bumping SCHEMA_VERSION)."""
     conn.execute(_NEWS_TABLE_DDL)
+    cols = {row["name"] for row in conn.execute(
+        "PRAGMA table_info(news_headlines)").fetchall()}
+    if "summary" not in cols:
+        conn.execute("ALTER TABLE news_headlines ADD COLUMN summary TEXT")
 
 
 def load_news(ticker: str, *, max_age_seconds: int = 3600) -> list[dict] | None:
@@ -600,7 +607,8 @@ def load_news(ticker: str, *, max_age_seconds: int = 3600) -> list[dict] | None:
     with connect() as conn:
         _ensure_news_table(conn)
         rows = conn.execute(
-            "SELECT fetched_at, title, link, published FROM news_headlines "
+            "SELECT fetched_at, title, link, published, summary "
+            "FROM news_headlines "
             "WHERE ticker = ? ORDER BY idx",
             (ticker_u,),
         ).fetchall()
@@ -614,7 +622,9 @@ def load_news(ticker: str, *, max_age_seconds: int = 3600) -> list[dict] | None:
     age = (datetime.utcnow() - fetched_dt).total_seconds()
     if age > max_age_seconds:
         return None
-    return [{"title": r["title"], "link": r["link"], "published": r["published"]}
+    return [{"title": r["title"], "link": r["link"],
+             "published": r["published"],
+             "summary": r["summary"] or ""}
             for r in rows]
 
 
@@ -631,15 +641,16 @@ def write_news(ticker: str, items: list[dict]) -> int:
             (ticker_u, now_iso, i,
              (it.get("title") or "").strip(),
              (it.get("link") or "").strip() or None,
-             (it.get("published") or "").strip() or None)
+             (it.get("published") or "").strip() or None,
+             (it.get("summary") or "").strip() or None)
             for i, it in enumerate(items)
             if (it.get("title") or "").strip()
         ]
         if rows:
             conn.executemany(
                 "INSERT INTO news_headlines "
-                "(ticker, fetched_at, idx, title, link, published) "
-                "VALUES (?, ?, ?, ?, ?, ?)", rows,
+                "(ticker, fetched_at, idx, title, link, published, summary) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)", rows,
             )
         conn.commit()
     return len(rows)

@@ -51,7 +51,8 @@ class TestParseRss:
     def test_missing_link_and_pub_are_blank_strings(self):
         xml = "<rss><channel><item><title>solo</title></item></channel></rss>"
         out = news._parse_rss(xml)
-        assert out == [{"title": "solo", "link": "", "published": ""}]
+        assert out == [{"title": "solo", "link": "",
+                        "published": "", "summary": ""}]
 
 
 # ---------------------------------------------------------------- _fetch_raw
@@ -108,7 +109,7 @@ class TestFetchHeadlines:
             out = news.fetch_headlines("PFL")
         raw.assert_not_called()
         assert out == [{"title": "cached", "link": "http://c",
-                        "published": "yesterday"}]
+                        "published": "yesterday", "summary": ""}]
 
     def test_cache_miss_fetches_and_writes(self, initialised_cache):
         with patch.object(news, "_fetch_raw", return_value=RSS_FIXTURE) as raw:
@@ -143,3 +144,59 @@ class TestFetchHeadlines:
         with patch.object(news, "_fetch_raw", return_value=RSS_FIXTURE) as raw:
             news.fetch_headlines("  pfl  ")
         raw.assert_called_once_with("PFL")
+
+
+# ---------------------------------------------------------------- _clean_summary
+class TestCleanSummary:
+    def test_empty(self):
+        assert news._clean_summary("") == ""
+        assert news._clean_summary(None) == ""
+
+    def test_strips_html_tags(self):
+        assert news._clean_summary("<p>Hello <b>world</b></p>") == "Hello world"
+
+    def test_collapses_whitespace(self):
+        assert news._clean_summary("foo\n\n   bar\tbaz") == "foo bar baz"
+
+    def test_strips_inline_markup(self):
+        raw = '<a href="x">Click</a> here <img src="y"/> end'
+        out = news._clean_summary(raw)
+        assert "<" not in out and ">" not in out
+        assert "Click here" in out and "end" in out
+
+    def test_truncates_long_summaries(self):
+        text = "word " * 200
+        out = news._clean_summary(text)
+        assert len(out) <= news.MAX_SUMMARY_CHARS + 1
+        assert out.endswith("…")
+
+    def test_short_summary_not_truncated(self):
+        out = news._clean_summary("Short and sweet.")
+        assert out == "Short and sweet."
+        assert not out.endswith("…")
+
+
+# ---------------------------------------------------------------- description in RSS
+class TestRssDescription:
+    def test_extracts_description_as_summary(self):
+        xml = ("<rss><channel><item>"
+               "<title>Tender announced</title>"
+               "<link>http://x</link>"
+               "<description>The fund will repurchase up to 5% of shares "
+               "at 98% of NAV.</description>"
+               "</item></channel></rss>")
+        out = news._parse_rss(xml)
+        assert "summary" in out[0]
+        assert "repurchase" in out[0]["summary"]
+
+    def test_html_description_is_stripped(self):
+        xml = ("<rss><channel><item><title>t</title>"
+               "<description>&lt;p&gt;Hello&lt;/p&gt;</description>"
+               "</item></channel></rss>")
+        out = news._parse_rss(xml)
+        assert out[0]["summary"] == "Hello"
+
+    def test_missing_description_is_empty_string(self):
+        xml = "<rss><channel><item><title>t</title></item></channel></rss>"
+        out = news._parse_rss(xml)
+        assert out[0]["summary"] == ""

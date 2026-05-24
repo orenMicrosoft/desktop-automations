@@ -647,6 +647,57 @@ class TestNewsCache:
         out = cache.load_news("PFL")
         assert out is not None and out[0]["title"] == "ok"
 
+    def test_summary_roundtrip(self, initialised_cache):
+        cache.write_news("PFL", [
+            {"title": "t1", "link": "http://x/1", "published": "p1",
+             "summary": "hello world"},
+            {"title": "t2", "link": "http://x/2", "published": "p2",
+             "summary": ""},
+        ])
+        out = cache.load_news("PFL")
+        assert out is not None and len(out) == 2
+        # First row has its summary preserved verbatim
+        assert out[0]["summary"] == "hello world"
+        # Empty summary on write → empty string on read (never None)
+        assert out[1]["summary"] == ""
+
+    def test_summary_defaults_to_empty_when_omitted(self, initialised_cache):
+        # write_news called without 'summary' key on any item
+        cache.write_news("PFL", [{"title": "t", "link": "l", "published": "p"}])
+        out = cache.load_news("PFL")
+        assert out is not None
+        assert out[0]["summary"] == ""
+
+    def test_ensure_news_table_adds_summary_to_legacy_db(self, initialised_cache):
+        # Simulate a legacy DB created before the summary column was added
+        from cef_screener.cache import connect
+        with connect() as conn:
+            conn.execute("DROP TABLE news_headlines")
+            conn.execute(
+                "CREATE TABLE news_headlines ("
+                "ticker TEXT NOT NULL, fetched_at TEXT NOT NULL, "
+                "idx INTEGER NOT NULL, title TEXT NOT NULL, "
+                "link TEXT, published TEXT, "
+                "PRIMARY KEY (ticker, idx))"
+            )
+            conn.commit()
+            # Sanity: legacy schema has no summary column
+            cols = {r["name"] for r in conn.execute(
+                "PRAGMA table_info(news_headlines)").fetchall()}
+            assert "summary" not in cols
+            # Run the upgrade
+            cache._ensure_news_table(conn)
+            conn.commit()
+            cols = {r["name"] for r in conn.execute(
+                "PRAGMA table_info(news_headlines)").fetchall()}
+            assert "summary" in cols
+        # After upgrade, write/load still works including the new column
+        assert cache.write_news("PFL", [
+            {"title": "ok", "summary": "after upgrade"}]) == 1
+        out = cache.load_news("PFL")
+        assert out is not None
+        assert out[0]["summary"] == "after upgrade"
+
 
 # ---------------------------------------------------------------- historical scores
 class TestHistoricalScores:

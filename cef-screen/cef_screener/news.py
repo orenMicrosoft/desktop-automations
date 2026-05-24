@@ -10,6 +10,7 @@ with a 1-hour TTL so we never hit Yahoo more than once an hour per ticker.
 from __future__ import annotations
 
 import logging
+import re
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -26,6 +27,22 @@ TIMEOUT_SECONDS = 5
 CACHE_TTL_SECONDS = 60 * 60  # 1 hour
 DEFAULT_MAX_ITEMS = 5
 USER_AGENT = "CefScreener/1.0 (+https://github.com/local/cef-screener)"
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"\s+")
+MAX_SUMMARY_CHARS = 320
+
+
+def _clean_summary(raw: str | None) -> str:
+    """Strip HTML/CSS, collapse whitespace, and trim to MAX_SUMMARY_CHARS."""
+    if not raw:
+        return ""
+    text = _HTML_TAG_RE.sub(" ", raw)
+    text = _WS_RE.sub(" ", text).strip()
+    if len(text) > MAX_SUMMARY_CHARS:
+        cut = text[:MAX_SUMMARY_CHARS].rsplit(" ", 1)[0]
+        text = cut.rstrip(",.;:") + "…"
+    return text
 
 
 def fetch_headlines(
@@ -66,7 +83,8 @@ def _fetch_raw(ticker: str) -> str:
 
 
 def _parse_rss(xml_text: str) -> list[dict]:
-    """Convert RSS 2.0 XML into a list of ``{title, link, published}`` dicts."""
+    """Convert RSS 2.0 XML into a list of
+    ``{title, link, published, summary}`` dicts."""
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError as e:
@@ -77,6 +95,8 @@ def _parse_rss(xml_text: str) -> list[dict]:
         title = (it.findtext("title") or "").strip()
         link = (it.findtext("link") or "").strip()
         pub = (it.findtext("pubDate") or "").strip()
+        summary = _clean_summary(it.findtext("description"))
         if title:
-            items.append({"title": title, "link": link, "published": pub})
+            items.append({"title": title, "link": link,
+                          "published": pub, "summary": summary})
     return items

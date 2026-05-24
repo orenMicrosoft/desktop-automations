@@ -255,6 +255,26 @@ class TestConfigRoute:
             resp = client.get("/config?status=bad&msg=oops")
             assert b"oops" in resp.data
 
+    def test_config_page_includes_composite_explainer(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, "run_pipeline", return_value=r):
+            resp = client.get("/config")
+        body = resp.data.decode("utf-8")
+        # The explainer summary header
+        assert "How the composite score is computed" in body
+        # All four sub-score names appear in their bold sections
+        assert "s_disc" in body
+        assert "s_res" in body
+        assert "s_sust" in body
+        assert "s_peer" in body
+        # Multiplier section references PENALTY_BASE by name
+        assert "PENALTY_BASE" in body
+        # Buy thresholds referenced
+        assert "BUY_TIER_A_MIN" in body
+        assert "BUY_TIER_B_MIN" in body
+        # Formula block present
+        assert "composite =" in body
+
 
 # ---------------------------------------------------------------- /api/config (POST)
 class TestApiConfigSave:
@@ -391,7 +411,9 @@ class TestInspectRoute:
         with patch.object(web.engine, "run_pipeline", return_value=r):
             # Try an XSS payload as the ticker
             resp = client.get("/inspect/T00<script>")
-            assert b"<script>" not in resp.data
+            # The user-supplied <script> must be escaped — but the layout itself
+            # contains a benign sortable-table <script> we ship intentionally.
+            assert b"T00<script>" not in resp.data
             assert b"&lt;script&gt;" in resp.data
 
 
@@ -704,6 +726,92 @@ class TestNewsHtml:
             out = web._news_html('PFL')
         assert "href='#'" in out
 
+    def test_renders_summary_div_when_present(self):
+        with patch.object(web.news, 'fetch_headlines', return_value=[
+            {'title': 'Tender offer announced',
+             'link': 'http://x/1', 'published': 'today',
+             'summary': 'The fund tenders 5% of shares at 98% of NAV.'},
+        ]):
+            out = web._news_html('PFL')
+        # summary text rendered (escaped, as a div)
+        assert "The fund tenders 5% of shares at 98% of NAV." in out
+        # signal pill (ACCRETIVE from "tender offer" keyword) is rendered
+        assert "ACCRETIVE" in out
+        # ensure the why text is present (color span)
+        assert "color:#3fb950" in out  # ACCRETIVE is green
+
+    def test_summary_keywords_drive_relevance(self):
+        # The summary should also drive signal classification, not just title.
+        with patch.object(web.news, 'fetch_headlines', return_value=[
+            {'title': 'Generic update',
+             'link': 'http://x/1', 'published': 'today',
+             'summary': 'Board approved a share repurchase program of $50M.'},
+        ]):
+            out = web._news_html('PFL')
+        # Summary contains "repurchase program" → ACCRETIVE
+        assert "ACCRETIVE" in out
+
+
+# ---------------------------------------------------------------- _news_relevance
+class TestNewsRelevance:
+    @pytest.mark.parametrize("title,expected_signal", [
+        # DILUTIVE
+        ("Rights offering announced today", "DILUTIVE"),
+        ("Secondary offering priced at $10", "DILUTIVE"),
+        # ACCRETIVE
+        ("Tender offer at 98% of NAV", "ACCRETIVE"),
+        ("Fund expands buyback authorization", "ACCRETIVE"),
+        # CATALYST
+        ("Fund to open-end in Q3", "CATALYST"),
+        ("Wind-down approved by board", "CATALYST"),
+        ("Merger of equals proposed", "CATALYST"),
+        ("Activist files 13D position", "CATALYST"),
+        # SELL SIGNAL
+        ("Distribution cut to $0.05/share", "SELL SIGNAL"),
+        ("Fund decreases monthly payout", "SELL SIGNAL"),
+        # BUY SIGNAL
+        ("Distribution increase declared", "BUY SIGNAL"),
+        ("Board raises distribution 10%", "BUY SIGNAL"),
+        ("Dividend hike approved", "BUY SIGNAL"),
+        # MIXED
+        ("Special distribution declared in December", "MIXED"),
+        ("Return of capital classification at year-end", "MIXED"),
+        # STRATEGY RISK
+        ("Portfolio manager change effective Q3", "STRATEGY RISK"),
+        # GOVERNANCE RISK
+        ("SEC investigation opened against fund", "GOVERNANCE RISK"),
+        # BEARISH
+        ("Holdings credit downgrade by Moody's", "BEARISH"),
+        ("Rate hike pressures CEF NAVs", "BEARISH"),
+        # BULLISH
+        ("Credit upgrade for major holding", "BULLISH"),
+        ("Fed cut signals lower leverage costs", "BULLISH"),
+        # CONTEXT
+        ("Leverage facility renewed at lower rate", "CONTEXT"),
+        # ROUTINE
+        ("Monthly distribution declared at $0.10", "ROUTINE"),
+        ("Quarterly report filed with SEC",
+         "GOVERNANCE RISK"),  # "SEC" wins earlier in rule order
+        ("Annual report filed", "ROUTINE"),
+        # GENERAL (fallback)
+        ("Random market chatter today", "GENERAL"),
+        ("", "GENERAL"),
+    ])
+    def test_signal_classification(self, title, expected_signal):
+        sig, why = web._news_relevance(title)
+        assert sig == expected_signal
+        assert why  # explanation is non-empty
+        assert isinstance(why, str)
+
+    def test_none_input_yields_general(self):
+        sig, why = web._news_relevance(None)
+        assert sig == "GENERAL"
+        assert why
+
+    def test_case_insensitive(self):
+        sig, _ = web._news_relevance("RIGHTS OFFERING priced")
+        assert sig == "DILUTIVE"
+
 
 # ---------------------------------------------------------------- nav buttons
 class TestNavButtons:
@@ -844,6 +952,26 @@ class TestPastStatusHtml:
         assert web._SPARK_BLOCKS[0] in out
         assert web._SPARK_BLOCKS[-1] in out
         assert "20.0" in out and "▲" in out
+        assert "vs first" in out
+
+    def test_single_snapshot_shows_friendly_placeholder(self, initialised_cache):
+        from cef_screener import cache as _cache
+        _cache.persist_historical_scores(
+            pd.DataFrame([{"ticker": "PFL", "composite": 77.7,
+                            "s_disc": 70.0, "s_res": 95.0, "s_sust": 85.0,
+                            "s_peer": 87.5, "multiplier": 0.92,
+                            "buy_label": "BUY-A"}]),
+            "2026-05-22")
+        out = web._past_status_html("PFL")
+        # No misleading "▶ 0.0" delta on a single snapshot
+        assert "▶" not in out
+        assert "1 snapshot" not in out  # avoid bad pluralization
+        # Friendly explanation present
+        assert "First snapshot recorded" in out
+        assert "2026-05-22" in out
+        # Table should still be there
+        assert "BUY-A" in out
+        assert "77.7" in out
 
     def test_renders_negative_delta(self, initialised_cache):
         from cef_screener import cache as _cache
@@ -996,3 +1124,62 @@ class TestInspectPhase2Integration:
             resp = client.get('/inspect/T00')
         body = resp.data.decode('utf-8')
         assert "coming soon" not in body.lower()
+
+
+# ---------------------------------------------------------------- sortable tables
+class TestSortableTables:
+    def test_layout_includes_sort_js(self):
+        out = web._layout("X", "<p>hi</p>")
+        assert "table.sortable" in out
+        assert "sortTable" in out
+        assert "<script>" in out
+
+    def test_layout_includes_sort_css(self):
+        out = web._layout("X", "<p>hi</p>")
+        assert "table.sortable th" in out
+        assert "sort-asc" in out and "sort-desc" in out
+
+    def test_buy_table_is_sortable(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, 'run_pipeline', return_value=r):
+            resp = client.get('/')
+        body = resp.data.decode('utf-8')
+        # The BUY route's main table must be marked sortable
+        assert "<table class='sortable'>" in body \
+            or '<table class="sortable">' in body
+
+    def test_sell_table_is_sortable(self, client):
+        r = _make_run_result(with_holdings=True)
+        with patch.object(web.engine, 'run_pipeline', return_value=r):
+            resp = client.get('/sell')
+        body = resp.data.decode('utf-8')
+        assert "sortable" in body
+
+    def test_past_status_table_is_sortable(self, initialised_cache):
+        from cef_screener import cache as _cache
+        _cache.persist_historical_scores(
+            pd.DataFrame([{"ticker": "PFL", "composite": 50.0}]),
+            "2026-05-01")
+        out = web._past_status_html("PFL")
+        assert "sortable" in out
+
+    def test_lab_table_is_sortable(self, client):
+        r = _make_run_result()
+        with patch.object(web.engine, 'run_pipeline', return_value=r):
+            resp = client.get('/lab')
+        body = resp.data.decode('utf-8')
+        assert "sortable" in body
+
+    def test_sort_js_handles_numeric_and_text(self):
+        # The JS must reference both numeric (parseFloat) and locale-aware
+        # text sorting (localeCompare) and push nulls last
+        js = web._SORT_JS
+        assert "parseFloat" in js
+        assert "localeCompare" in js
+        assert "nulls" in js.lower() or "null" in js
+
+    def test_sort_js_toggles_direction(self):
+        js = web._SORT_JS
+        assert "sort-asc" in js and "sort-desc" in js
+        # Click should toggle from asc -> desc when already asc
+        assert "contains('sort-asc')" in js
