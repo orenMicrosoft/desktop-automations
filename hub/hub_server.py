@@ -80,6 +80,12 @@ SERVER_COMMANDS = {
         "cmd": [sys.executable, "pr_reviewer_server.py", "--no-browser"],
         "health_path": "/api/health",
     },
+    "clawpilot-pr-reviews": {
+        "port": 8765,
+        "cwd": r"C:\Users\orenhorowitz\.copilot\pr-reviews",
+        "cmd": [sys.executable, "-m", "http.server", "8765", "--bind", "127.0.0.1"],
+        "health_path": "/index.html",
+    },
     "realestate-finder": {
         "port": 8098,
         "cwd": r"C:\Users\orenhorowitz\desktop-automations\realestate-finder",
