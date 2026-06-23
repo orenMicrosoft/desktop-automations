@@ -18,6 +18,10 @@ import signal
 DIR = os.path.dirname(os.path.abspath(__file__))
 HUB_PORT = 8091
 AUTOMATIONS_FILE = os.path.join(DIR, "automations.json")
+SKILLS_FILE = os.path.join(DIR, "skills.json")
+# Copilot CLI skills are auto-loaded by every session from here. The hub reads
+# the same folder so the dashboard and your sessions stay in sync (single source of truth).
+COPILOT_SKILLS_DIR = os.path.join(os.path.expanduser("~"), ".copilot", "skills")
 
 # Suppress noisy ConnectionResetError from browsers closing connections early
 _BENIGN_ERRORS = (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError)
@@ -149,14 +153,26 @@ def start_server(auto_id):
 
 
 def get_all_status():
-    """Return status for all registered servers."""
-    statuses = {}
-    for auto_id, cfg in SERVER_COMMANDS.items():
-        health_path = cfg.get("health_path", "/")
-        statuses[auto_id] = {
+    """Return status for all registered servers.
+
+    Checks run concurrently with a short timeout so that an unreachable or
+    slow automation can never stall the whole /api/status response (which the
+    hub UI awaits before opening any dashboard).
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _check(item):
+        auto_id, cfg = item
+        return auto_id, {
             "port": cfg["port"],
-            "running": is_http_ready(cfg["port"], health_path, timeout=2),
+            "running": is_http_ready(cfg["port"], cfg.get("health_path", "/"), timeout=1),
         }
+
+    statuses = {}
+    items = list(SERVER_COMMANDS.items())
+    with ThreadPoolExecutor(max_workers=max(1, len(items))) as ex:
+        for auto_id, st in ex.map(_check, items):
+            statuses[auto_id] = st
     return statuses
 
 
@@ -168,6 +184,81 @@ def start_all_servers():
         results[auto_id] = {"ok": ok, "message": msg}
         print(f"  {auto_id}: {msg}")
     return results
+
+
+def _parse_frontmatter(text):
+    """Parse a SKILL.md: returns (meta_dict, body_str).
+
+    Frontmatter is the block between the first two '---' lines. Each metadata
+    line is 'key: value' where value may be wrapped in single/double quotes and
+    is expected to be on a single physical line (true for our SKILL.md files).
+    """
+    meta, body = {}, text
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            fm = text[3:end]
+            body = text[end + 4:].lstrip("\n")
+            for line in fm.splitlines():
+                line = line.rstrip()
+                if not line or line.lstrip().startswith("#"):
+                    continue
+                if ":" not in line:
+                    continue
+                key, val = line.split(":", 1)
+                key = key.strip()
+                if not key.replace("_", "").isalnum():
+                    continue
+                val = val.strip()
+                if len(val) >= 2 and val[0] in "\"'" and val[-1] == val[0]:
+                    val = val[1:-1]
+                meta[key] = val
+    return meta, body
+
+
+def get_all_skills():
+    """Catalog every Copilot CLI skill in ~/.copilot/skills plus any legacy
+    prompt skills in skills.json. Single source of truth = the skills folder."""
+    skills = []
+    seen = set()
+    if os.path.isdir(COPILOT_SKILLS_DIR):
+        for name in sorted(os.listdir(COPILOT_SKILLS_DIR)):
+            sp = os.path.join(COPILOT_SKILLS_DIR, name, "SKILL.md")
+            if not os.path.isfile(sp):
+                continue
+            try:
+                with open(sp, "r", encoding="utf-8") as f:
+                    text = f.read()
+            except Exception:
+                continue
+            meta, body = _parse_frontmatter(text)
+            sid = meta.get("name", name)
+            seen.add(sid)
+            skills.append({
+                "id": sid,
+                "name": meta.get("name", name),
+                "icon": meta.get("icon", "🧠"),
+                "description": meta.get("description", ""),
+                "prompt": meta.get("prompt", ""),
+                "has_prompt": bool(meta.get("prompt")),
+                "body": body,
+                "source": "copilot-cli",
+                "path": sp,
+            })
+    # Legacy prompt skills (not yet migrated to a SKILL.md folder)
+    try:
+        with open(SKILLS_FILE, "r", encoding="utf-8") as f:
+            for s in json.load(f):
+                if s.get("id") in seen or s.get("name") in seen:
+                    continue
+                s = dict(s)
+                s.setdefault("source", "prompt")
+                s["has_prompt"] = bool(s.get("prompt"))
+                s.setdefault("body", s.get("prompt", ""))
+                skills.append(s)
+    except Exception:
+        pass
+    return skills
 
 
 class HubHandler(http.server.SimpleHTTPRequestHandler):
@@ -202,6 +293,8 @@ class HubHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/status":
             self._json_response(get_all_status())
+        elif self.path == "/api/skills":
+            self._json_response(get_all_skills())
         else:
             super().do_GET()
 
