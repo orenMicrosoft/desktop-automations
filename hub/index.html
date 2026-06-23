@@ -133,41 +133,21 @@ async function load() {
   }
 }
 
-async function openDashboard(a) {
+function openDashboard(a) {
+  // Open instantly with a lightweight loader that boots the child server and
+  // redirects (cache-busted) the moment it's ready — no more long blank wait,
+  // and the child page always loads fresh.
+  window.open('launch.html?id=' + encodeURIComponent(a.id) + '&url=' + encodeURIComponent(a.dashboard), '_blank');
   const badge = document.getElementById('badge-' + a.id);
-
-  // Check if server is already running
-  try {
-    const sr = await fetch('/api/status', { signal: AbortSignal.timeout(3000) });
-    const statuses = await sr.json();
-    if (statuses[a.id]?.running) {
-      window.open(a.dashboard, '_blank');
-      return;
-    }
-  } catch (_) {}
-
-  // Server is down — start it
-  badge.className = 'server-badge starting';
-  badge.textContent = '⏳ Starting...';
-
-  try {
-    const resp = await fetch('/api/start/' + a.id, { method: 'POST' });
-    const result = await resp.json();
-    if (result.ok) {
-      badge.className = 'server-badge online';
-      badge.textContent = '● Online';
-      window.open(a.dashboard, '_blank');
-    } else {
-      badge.className = 'server-badge offline';
-      badge.textContent = '✗ Failed';
-      setTimeout(() => { badge.className = 'server-badge offline'; badge.textContent = '○ Offline'; }, 3000);
-    }
-  } catch (_) {
-    // Hub API unreachable/slow — still try to open; the dashboard server may be up.
-    badge.className = 'server-badge offline';
-    badge.textContent = '○ Offline';
-    window.open(a.dashboard, '_blank');
-  }
+  if (badge) { badge.className = 'server-badge starting'; badge.textContent = '⏳ Starting...'; }
+  let n = 0;
+  const iv = setInterval(async () => {
+    try {
+      const s = await (await fetch('/api/status', { cache: 'no-store' })).json();
+      if (s[a.id]?.running && badge) { badge.className = 'server-badge online'; badge.textContent = '● Online'; }
+    } catch (_) {}
+    if (++n >= 15) clearInterval(iv);
+  }, 2000);
 }
 
 async function fetchLastRun(a) {

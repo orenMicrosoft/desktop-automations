@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Starting…</title>
+<style>
+  html,body{height:100%;margin:0}
+  body{font-family:'Segoe UI',sans-serif;background:#1e1e2e;color:#cdd6f4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px}
+  .spin{width:46px;height:46px;border:5px solid #45475a;border-top-color:#89b4fa;border-radius:50%;animation:r .9s linear infinite}
+  @keyframes r{to{transform:rotate(360deg)}}
+  h1{font-size:20px;margin:0;color:#89b4fa}
+  .sub{color:#6c7086;font-size:13px}
+  a{color:#cba6f7;font-size:13px}
+</style>
+</head>
+<body>
+  <div class="spin"></div>
+  <h1 id="title">Starting…</h1>
+  <div class="sub" id="sub">Booting the dashboard, this opens automatically.</div>
+  <a id="manual" href="#" style="display:none">Taking too long? Open it now →</a>
+<script>
+const p = new URLSearchParams(location.search);
+const id = p.get('id');
+const url = p.get('url');
+document.getElementById('title').textContent = 'Starting ' + (id || 'dashboard') + '…';
+const manual = document.getElementById('manual');
+let done = false;
+
+function bust(u){ return u + (u.includes('?') ? '&' : '?') + '_=' + Date.now(); }
+function go(){ if (done || !url) return; done = true; location.replace(bust(url)); }
+
+if (url) { manual.href = bust(url); manual.onclick = () => { go(); return false; }; }
+
+// 1) Kick off the server start (returns when the child is HTTP-ready, up to ~30s).
+if (id) fetch('/api/start/' + encodeURIComponent(id), { method: 'POST' })
+  .then(r => r.json()).then(() => go()).catch(() => {});
+
+// 2) Poll status in parallel so we redirect the instant it's ready (often faster).
+(async () => {
+  for (let i = 0; i < 60 && !done; i++) {
+    try {
+      const s = await (await fetch('/api/status', { cache: 'no-store' })).json();
+      if (s[id] && s[id].running) { go(); return; }
+    } catch (_) {}
+    if (i === 5) { manual.style.display = 'block'; }
+    if (i === 12) { document.getElementById('sub').textContent = 'Still starting — first launch can take a moment…'; }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  // Give up waiting but still try to open whatever is there.
+  go();
+})();
+</script>
+</body>
+</html>
