@@ -332,9 +332,10 @@ def cleanup():
 
 
 def main():
+    cache_bust = f"http://localhost:{HUB_PORT}/?v={int(time.time())}"
     if is_port_open(HUB_PORT):
         print(f"Hub already running at http://localhost:{HUB_PORT}")
-        webbrowser.open(f"http://localhost:{HUB_PORT}")
+        webbrowser.open(cache_bust)
         return
 
     print("=" * 44)
@@ -353,7 +354,7 @@ def main():
     print(f"Hub running at: {url}")
     print("Press Ctrl+C to stop.\n")
 
-    webbrowser.open(url)
+    webbrowser.open(cache_bust)
 
     try:
         server.serve_forever()
