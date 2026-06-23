@@ -38,7 +38,12 @@
 <p class="subtitle">Click an automation to open its dashboard. <button id="e2e-btn" onclick="runAllE2E()" style="background:#cba6f7;color:#1e1e2e;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:600;font-size:13px;margin-left:12px">🧪 Run All E2E Tests</button></p>
 <div class="grid" id="grid"></div>
 <div class="empty" id="empty" style="display:none">No automations registered yet. Add entries to <code>automations.json</code>.</div>
-<p class="footer">Registry: <code>automations.json</code></p>
+
+<h1 style="font-size:22px;margin-top:40px">🧠 Skills</h1>
+<p class="subtitle">Prompt-based skills — click <b>Copy</b>, then paste into Copilot to run the task on demand.</p>
+<div class="grid" id="skills-grid"></div>
+
+<p class="footer">Registry: <code>automations.json</code> · Skills: <code>skills.json</code></p>
 
 <!-- E2E Test Modal -->
 <div id="e2e-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;display:none;align-items:center;justify-content:center">
@@ -63,6 +68,7 @@ const ICONS = {
   'cleanup': '🧹',
   'monitor': '📊',
   'status': '📊',
+  'planner': '📋',
 };
 
 function pickIcon(id, name) {
@@ -236,6 +242,36 @@ async function fetchLastRun(a) {
 }
 
 load();
+
+// ── Skills (prompt-based, copy to clipboard) ──────────────────────────────
+async function loadSkills() {
+  const grid = document.getElementById('skills-grid');
+  try {
+    const resp = await fetch('skills.json?t=' + Date.now());
+    const skills = await resp.json();
+    if (!skills.length) { grid.innerHTML = '<div class="empty">No skills yet. Add entries to skills.json.</div>'; return; }
+    skills.forEach(s => {
+      const card = document.createElement('div');
+      card.className = 'auto-card';
+      card.style.cursor = 'default';
+      card.innerHTML = `
+        <h2>${s.icon || '🧠'} ${s.name} <span class="server-badge online" style="background:rgba(203,166,247,0.15);color:#cba6f7">Skill</span></h2>
+        <div class="desc">${s.description}</div>
+        <div class="status"><button class="copy-skill" data-id="${s.id}"
+          style="background:#cba6f7;color:#1e1e2e;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:600;font-size:13px">📋 Copy prompt</button></div>`;
+      card.querySelector('.copy-skill').addEventListener('click', () => {
+        navigator.clipboard.writeText(s.prompt).then(() => {
+          const b = card.querySelector('.copy-skill');
+          const o = b.textContent; b.textContent = '✓ Copied'; setTimeout(() => b.textContent = o, 1200);
+        });
+      });
+      grid.appendChild(card);
+    });
+  } catch (e) {
+    grid.innerHTML = '<div class="empty">Error loading skills: ' + e.message + '</div>';
+  }
+}
+loadSkills();
 
 // E2E Test Runner
 async function runAllE2E() {

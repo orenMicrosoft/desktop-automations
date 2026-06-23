@@ -33,39 +33,6 @@
     "health_path": "/dashboard.html"
   },
   {
-    "id": "email-digest",
-    "name": "Email Digest",
-    "description": "Categorized summary of unread Outlook emails — action items, team, leadership, builds",
-    "schedule": "Manual refresh",
-    "dashboard": "http://localhost:8094/dashboard.html",
-    "port": 8094,
-    "folder": "email-digest",
-    "cmd": ["email_digest.py", "--no-browser"],
-    "health_path": "/api/health"
-  },
-  {
-    "id": "teams-summary",
-    "name": "Teams Summary",
-    "description": "Summarizes recent Teams messages from local cache — people, subjects, links, and content",
-    "schedule": "On demand",
-    "dashboard": "http://localhost:8095/dashboard.html",
-    "port": 8095,
-    "folder": "teams-summary",
-    "cmd": ["dashboard_server.py", "--no-browser"],
-    "health_path": "/dashboard.html"
-  },
-  {
-    "id": "openclaw-meni",
-    "name": "Meni (OpenClaw)",
-    "description": "Personal WhatsApp AI assistant — gateway health, WhatsApp link status, QR connect",
-    "schedule": "Always-on (gateway auto-starts)",
-    "dashboard": "http://localhost:8096/dashboard.html",
-    "port": 8096,
-    "folder": "openclaw-meni",
-    "cmd": ["dashboard_server.py", "--no-browser"],
-    "health_path": "/api/status"
-  },
-  {
     "id": "pr-reviewer",
     "name": "PR Reviewer",
     "description": "AI-powered PR review — generate comments, edit inline, post directly to ADO",
@@ -130,5 +97,16 @@
     "folder": "cef-screen",
     "cmd": ["-m", "cef_screener.web", "--no-browser"],
     "health_path": "/api/health"
+  },
+  {
+    "id": "daily-planner",
+    "name": "Daily Planner",
+    "description": "Time-blocked daily schedule with day tabs + history, click-to-complete, inline edit, auto-save, and saved start/end-of-day prompts",
+    "schedule": "Daily — start/end of day",
+    "dashboard": "http://localhost:8101/",
+    "port": 8101,
+    "folder": "daily-planner",
+    "cmd": ["server.py", "8101"],
+    "health_path": "/todo-data.js"
   }
 ]

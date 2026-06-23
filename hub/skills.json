@@ -1,0 +1,16 @@
+[
+  {
+    "id": "email-digest",
+    "name": "Email Digest",
+    "icon": "📧",
+    "description": "Categorized summary of unread Outlook emails — action items, team, leadership, builds.",
+    "prompt": "📧 Give me a categorized digest of my unread Outlook emails. Read unread mail via Outlook COM (Outlook is running; use a Restrict filter of [UnRead]=True). Group into: Action Items (I'm explicitly asked to do something), Team, Leadership, Builds/Pipelines, and Other. For each item show sender, subject, a 1-line summary, and any link. Sort by importance and keep it concise."
+  },
+  {
+    "id": "teams-summary",
+    "name": "Teams Summary",
+    "icon": "💬",
+    "description": "Summarize recent Teams messages from the local client cache (no Graph token needed).",
+    "prompt": "💬 Summarize my recent Microsoft Teams messages by reading the local Teams WebView2 IndexedDB cache directly (Graph API is blocked by the tenant token-protection policy, so do NOT use a token). Show: recent messages (timestamp, sender, snippet), people mentioned, chat/channel subjects, and shared links (ADO PRs, builds, work items). Group and dedupe, and flag anything that looks like it needs my reply."
+  }
+]

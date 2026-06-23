@@ -56,24 +56,6 @@ SERVER_COMMANDS = {
         "cmd": [sys.executable, "pipeline_dashboard.py", "--no-browser"],
         "health_path": "/dashboard.html",
     },
-    "teams-summary": {
-        "port": 8095,
-        "cwd": r"C:\Users\orenhorowitz\desktop-automations\teams-summary",
-        "cmd": [sys.executable, "dashboard_server.py", "--no-browser"],
-        "health_path": "/dashboard.html",
-    },
-    "email-digest": {
-        "port": 8094,
-        "cwd": r"C:\Users\orenhorowitz\Code\email-digest",
-        "cmd": [sys.executable, "email_digest.py", "--no-browser"],
-        "health_path": "/api/health",
-    },
-    "openclaw-meni": {
-        "port": 8096,
-        "cwd": r"C:\Users\orenhorowitz\My Automations\OpenClaw Meni",
-        "cmd": [sys.executable, "dashboard_server.py", "--no-browser"],
-        "health_path": "/api/status",
-    },
     "pr-reviewer": {
         "port": 8097,
         "cwd": r"C:\Users\orenhorowitz\desktop-automations\pr-reviewer",
@@ -103,6 +85,12 @@ SERVER_COMMANDS = {
         "cwd": r"C:\Users\orenhorowitz\Code\CefScreen",
         "cmd": [sys.executable, "-m", "cef_screener.web", "--no-browser"],
         "health_path": "/api/health",
+    },
+    "daily-planner": {
+        "port": 8101,
+        "cwd": r"C:\Users\orenhorowitz\desktop-automations\daily-planner",
+        "cmd": [sys.executable, "server.py", "8101"],
+        "health_path": "/todo-data.js",
     },
 }
 
@@ -248,10 +236,8 @@ def main():
     print("=" * 44)
     print()
 
-    # Start all child servers
-    print("Starting automation servers...")
-    start_all_servers()
-    print()
+    # Note: child servers are NOT started here — each one starts on demand
+    # when you click its card in the hub (POST /api/start/<id>).
 
     # Start hub server
     os.chdir(DIR)

@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oren · Daily Planner</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#181b22; --card2:#1f232c; --line:#2a2f3a;
+    --txt:#e7e9ee; --muted:#9aa3b2; --p1:#ff6b6b; --p2:#ffd166; --p3:#7aa2ff;
+    --done:#3ddc97; --wait:#f0a35e; --prog:#5b8cff; --now:#5b8cff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:22px}
+  .wrap{max-width:900px;margin:0 auto}
+  .head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  h1{font-size:22px;margin:0}
+  .sub{color:var(--muted);font-size:12.5px}
+  .exam{display:inline-block;background:rgba(255,209,102,.13);color:var(--p2);
+    border:1px solid rgba(255,209,102,.3);padding:2px 10px;border-radius:20px;font-size:12px}
+  /* date strip (horizontal scroll) */
+  .striprow{display:flex;align-items:center;gap:8px;margin:14px 0 6px;border-bottom:1px solid var(--line);padding-bottom:10px}
+  .tabs{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;scroll-behavior:smooth;
+    flex:1;padding-bottom:4px}
+  .tabs::-webkit-scrollbar{height:7px}
+  .tabs::-webkit-scrollbar-thumb{background:#2a2f3a;border-radius:6px}
+  .tabs::-webkit-scrollbar-thumb:hover{background:#3a4252}
+  .tab{background:var(--card);border:1px solid var(--line);color:var(--muted);
+    border-radius:9px;padding:7px 13px;cursor:pointer;font-size:13px;display:flex;
+    flex-direction:column;align-items:center;gap:1px;min-width:62px;flex:0 0 auto;transition:.12s}
+  .tab:hover{border-color:#3a4252;color:var(--txt)}
+  .tab .d{font-weight:700;font-size:14px}
+  .tab .w{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  .tab.active{background:var(--card2);border-color:var(--now);color:var(--txt)}
+  .tab.today .d{color:var(--now)}
+  .tab .mini{font-size:10px;color:var(--muted);margin-top:2px}
+  .jump{flex:0 0 auto;background:var(--card2);border:1px solid var(--line);color:var(--txt);
+    border-radius:8px;padding:7px 11px;font-size:12.5px;cursor:pointer;white-space:nowrap}
+  .jump:hover{border-color:var(--now)}
+  /* progress */
+  .prog{display:flex;align-items:center;gap:10px;margin:14px 0 6px}
+  .bar{flex:1;height:8px;background:#22262f;border-radius:6px;overflow:hidden}
+  .bar > i{display:block;height:100%;background:linear-gradient(90deg,#3ddc97,#5b8cff)}
+  .prog .lbl{font-size:12px;color:var(--muted);white-space:nowrap}
+  .now-banner{background:linear-gradient(90deg,#1d2740,#181b22);border:1px solid #2c3a5e;
+    border-radius:10px;padding:9px 13px;margin:6px 0 14px;font-size:13px;color:#cdd7ee}
+  /* rows */
+  .row{display:flex;align-items:stretch;gap:12px;margin:8px 0}
+  .time{flex:0 0 92px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;
+    font-size:13px;padding-top:12px}
+  .card{flex:1;background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:11px 14px;display:flex;align-items:center;gap:12px;position:relative;overflow:hidden}
+  .card.fixed{background:var(--card2);border-style:dashed}
+  .card.now{border-color:var(--now);box-shadow:0 0 0 1px var(--now) inset}
+  .barL{position:absolute;left:0;top:0;bottom:0;width:4px}
+  .P1 .barL{background:var(--p1)} .P2 .barL{background:var(--p2)} .P3 .barL{background:var(--p3)}
+  .check{flex:0 0 20px;height:20px;border-radius:50%;border:2px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:12px;color:#0f1115}
+  .status-done .check{background:var(--done);border-color:var(--done)}
+  .status-done .check::after{content:'✓'}
+  .status-in_progress .check{border-color:var(--prog);background:var(--prog)}
+  .status-in_progress .check::after{content:'▶';font-size:9px}
+  .status-waiting .check{border-color:var(--wait)}
+  .status-waiting .check::after{content:'…';color:var(--wait)}
+  .main{flex:1;min-width:0}
+  .title{font-weight:600}
+  .status-done .title{text-decoration:line-through;color:var(--muted)}
+  .meta{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:20px;margin-left:6px}
+  .tag.P1{background:rgba(255,107,107,.15);color:var(--p1)}
+  .tag.P2{background:rgba(255,209,102,.15);color:var(--p2)}
+  .tag.P3{background:rgba(122,162,255,.15);color:var(--p3)}
+  .tag.wait{background:rgba(240,163,94,.15);color:var(--wait)}
+  .tag.wip{background:rgba(91,140,255,.15);color:var(--prog)}
+  .est{flex:0 0 auto;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+  .empty{color:var(--muted);font-size:13px;padding:18px;text-align:center;
+    border:1px dashed var(--line);border-radius:12px}
+  .spare{margin:18px 0 8px;color:var(--muted);font-size:12px;text-transform:uppercase;
+    letter-spacing:.06em;border-top:1px dashed var(--line);padding-top:14px}
+  .controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0 4px}
+  .controls .hint{font-size:12px;color:var(--muted)}
+  .controls .spacer{flex:1}
+  .btn{background:var(--card2);border:1px solid var(--line);color:var(--txt);border-radius:8px;
+    padding:6px 11px;font-size:12.5px;cursor:pointer}
+  .btn:hover{border-color:var(--now)}
+  .btn.ghost{background:transparent;color:var(--muted)}
+  .unsaved{font-size:12px;color:var(--p2)}
+  .check{cursor:pointer}
+  .card.fixed .check{cursor:default}
+  [contenteditable]{outline:none;border-radius:4px}
+  [contenteditable]:hover{background:#22262f}
+  [contenteditable]:focus{background:#11202e;box-shadow:0 0 0 1px var(--now)}
+  .ttext{padding:0 2px}
+  .meta[contenteditable]:empty:before{content:'+ note';color:#586074}
+  .pcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0}
+  .pcard h3{margin:0 0 8px;font-size:14px}
+  .pcard pre{white-space:pre-wrap;background:#11141a;border:1px solid var(--line);border-radius:8px;
+    padding:11px;font:12.5px/1.5 ui-monospace,Consolas,monospace;color:#cdd7ee;margin:0 0 10px}
+  .pcard .btn{margin-right:6px}
+  .utilbtn{background:var(--card2);border:1px solid var(--line);color:var(--muted);border-radius:8px;
+    padding:6px 11px;font-size:12.5px;cursor:pointer;white-space:nowrap}
+  .utilbtn:hover{border-color:var(--now);color:var(--txt)}
+  .utilbtn.active{border-color:var(--now);color:var(--txt);background:#11202e}
+  .utilbtn .badge{display:inline-block;margin-left:5px;font-size:10.5px;color:var(--muted)}
+  .foot{color:var(--muted);font-size:12px;margin-top:22px;border-top:1px solid var(--line);padding-top:12px}
+  code{background:#22262f;padding:1px 6px;border-radius:6px;font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>📋 Oren · Daily Planner</h1>
+    <span class="exam" id="examNote"></span>
+  </div>
+  <div class="sub" id="updated"></div>
+
+  <div class="controls">
+    <span class="hint">Click the circle to cycle <b>pending → WIP → done</b> · double-click a title or note to edit · changes <b>auto-save</b></span>
+    <span class="spacer"></span>
+    <span class="unsaved" id="unsaved"></span>
+    <button class="utilbtn" id="util-backlog" onclick="sel('backlog')">📥 Backlog<span class="badge" id="blcount"></span></button>
+    <button class="utilbtn" id="util-prompts" onclick="sel('prompts')">📌 Prompts</button>
+    <button class="btn" onclick="exportData()">⬇ Download a copy</button>
+  </div>
+
+  <div class="striprow">
+    <div class="tabs" id="tabs"></div>
+    <button class="jump" onclick="gotoToday()">⊙ Today</button>
+  </div>
+  <div class="prog"><div class="bar"><i id="progFill"></i></div><span class="lbl" id="progLbl"></span></div>
+  <div class="now-banner" id="nowBanner"></div>
+  <div id="list"></div>
+
+  <div class="foot">
+    Single source: <code>todo-data.js</code> · history accumulates as day tabs.
+    Update by prompting your Copilot session — e.g.
+    <code>sfi done</code>, <code>add hotfix 45m P1 today</code>,
+    <code>push coverage to Thu</code>, <code>close the day</code>.
+    Then refresh.
+  </div>
+</div>
+
+<script src="todo-data.js"></script>
+<script>
+const D = window.TODO_DATA || {days:{},backlog:[]};
+const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const todayKey = (()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`})();
+let active = D.days[todayKey] ? todayKey : Object.keys(D.days).sort()[0];
+
+// ── local edit overlay (file://) OR auto-save to file (http via server.py) ────
+const AUTOSAVE = location.protocol.startsWith('http');
+function loadOv(){try{return JSON.parse(localStorage.getItem('todoOv')||'{}')}catch(e){return{}}}
+let OV = AUTOSAVE ? {} : loadOv();
+function saveOv(){localStorage.setItem('todoOv',JSON.stringify(OV))}
+function mt(x){const o=OV[x.id];return o?{...x,...o}:x}            // merge overrides (file:// mode)
+
+function findTask(id,fn){
+  Object.values(D.days).forEach(dz=>dz.tasks.forEach(t=>{if(t.id===id)fn(t)}));
+  (D.backlog||[]).forEach(t=>{if(t.id===id)fn(t)});
+}
+function persist(){
+  const out={updated:D.updated,examNote:D.examNote,days:D.days,backlog:D.backlog};
+  fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(out)})
+    .then(r=>r.json()).then(()=>{const u=document.getElementById('unsaved');if(u){u.textContent='✓ saved';setTimeout(()=>{u.textContent=''},1200);}})
+    .catch(()=>{const u=document.getElementById('unsaved');if(u)u.textContent='⚠ save failed';});
+}
+function applyEdit(id,field,val){
+  if(AUTOSAVE){ findTask(id,t=>t[field]=val); render(); persist(); }
+  else { OV[id]=OV[id]||{}; OV[id][field]=val; saveOv(); render(); }
+}
+function setOv(id,field,val){ applyEdit(id,field,val); }
+
+const ORDER=['pending','in_progress','done'];
+function cycle(id){
+  let cur='pending';
+  Object.values(D.days).forEach(dz=>dz.tasks.forEach(t=>{if(t.id===id)cur=mt(t).st}));
+  (D.backlog||[]).forEach(t=>{if(t.id===id)cur=mt(t).st});
+  let i=ORDER.indexOf(cur); let next = i===-1 ? 'done' : ORDER[(i+1)%ORDER.length];
+  applyEdit(id,'st',next);
+}
+function editTxt(el){
+  const id=el.getAttribute('data-id'), field=el.getAttribute('data-field');
+  applyEdit(id,field,el.textContent.trim());
+}
+function exportData(){
+  const out={updated:D.updated,examNote:D.examNote,days:{},backlog:(D.backlog||[]).map(mt)};
+  Object.keys(D.days).forEach(k=>out.days[k]={tasks:D.days[k].tasks.map(mt)});
+  const content='window.TODO_DATA = '+JSON.stringify(out,null,2)+';\n';
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([content],{type:'text/javascript'}));
+  a.download='todo-data.js'; a.click();
+}
+function discard(){ if(confirm('Discard your local in-browser edits and reload from file?')){localStorage.removeItem('todoOv');OV={};render();} }
+
+document.getElementById('examNote').textContent = D.examNote||'';
+document.getElementById('updated').textContent = 'Updated '+(D.updated||'')+' · Israel time';
+
+function mins(t){if(!t)return null;let[a,b]=t.split(':').map(Number);if(a===0&&b===0)return 24*60;return a*60+b}
+function fmtEst(m){if(!m)return'';return m>=60?`${Math.floor(m/60)}h${m%60?(' '+(m%60)+'m'):''}`:`${m}m`}
+function dayStats(tasks){const real=tasks.filter(x=>!x.fx&&x.est>0);const done=real.filter(x=>x.st==='done').length;return{done,total:real.length}}
+
+function buildTabs(){
+  const keys=Object.keys(D.days).sort();
+  let html='';
+  keys.forEach(k=>{
+    const[y,m,da]=k.split('-').map(Number);const dt=new Date(y,m-1,da);
+    const st=dayStats(D.days[k].tasks.map(mt));
+    html+=`<div class="tab ${k===active?'active':''} ${k===todayKey?'today':''}" id="tab-${k}" onclick="sel('${k}')">
+      <span class="d">${da} ${MO[m-1]}</span>
+      <span class="w">${k===todayKey?'Today':WD[dt.getDay()]}</span>
+      <span class="mini">${st.done}/${st.total} done</span></div>`;
+  });
+  document.getElementById('tabs').innerHTML=html;
+  // util buttons (always visible, separate from dates)
+  const bl=(D.backlog||[]).map(mt).filter(x=>x.st!=='done');
+  document.getElementById('blcount').textContent = bl.length? `(${bl.length})` : '';
+  document.getElementById('util-backlog').classList.toggle('active', active==='backlog');
+  document.getElementById('util-prompts').classList.toggle('active', active==='prompts');
+  // keep the active/today date in view
+  scrollStripTo(active && D.days[active] ? active : todayKey);
+}
+
+function scrollStripTo(key){
+  const strip=document.getElementById('tabs'); const el=document.getElementById('tab-'+key);
+  if(!strip||!el)return;
+  // place the target slightly right-of-center so recent days show to its left
+  strip.scrollLeft = el.offsetLeft - strip.clientWidth*0.62;
+}
+function gotoToday(){ if(D.days[todayKey]){ active=todayKey; render(); } else { scrollStripTo(Object.keys(D.days).sort().slice(-1)[0]); } }
+
+const PROMPTS = [
+ {h:'☀️ Start of day', body:
+`☀️ Start my day in the planner.
+1. Add a new tab for today's date.
+2. Roll over unfinished tasks from yesterday + open backlog items.
+3. Ask me for today's meetings, lunch, and the time I want to stop.
+4. Build a realistic time-blocked schedule — P1 first, batch quick wins, warn me if I'm overcommitted.
+5. Update todo-data.js and open the app.`},
+ {h:'🔄 Sync today → tomorrow', body:
+`🔄 I've updated today's statuses in the live planner (auto-saved).
+Read the latest todo-data.js, then rebuild tomorrow based on what's done vs not:
+- Carry over anything unfinished/WIP into tomorrow or the backlog.
+- Keep my fixed slots (meetings, lunch, family, study).
+- Re-balance so P1 items fit; flag anything that won't.`},
+ {h:'🌙 End of day / close the day', body:
+`🌙 Close the day.
+1. Status updates: <what's done / WIP / blocked>.
+2. Mark each task, move unfinished items to tomorrow or backlog.
+3. Short summary: what got done vs what slipped, and why.
+4. Prep tomorrow's tab with the rolled-over items.
+5. Update todo-data.js and open the app.`},
+];
+function copyText(i){navigator.clipboard.writeText(PROMPTS[i].body).then(()=>{
+  const b=document.getElementById('cp'+i); if(b){const o=b.textContent;b.textContent='✓ Copied';setTimeout(()=>b.textContent=o,1200);}
+});}
+
+function rowHTML(x,now){
+  const isNow = !x.fx && x.s && now!=null && now>=mins(x.s) && now<mins(x.e) && x.st!=='done';
+  let tags=`<span class="tag ${x.p}">${x.p}</span>`;
+  if(x.st==='waiting')tags+='<span class="tag wait">waiting</span>';
+  if(x.st==='in_progress')tags+='<span class="tag wip">WIP</span>';
+  const check = x.fx ? '<div style="width:20px"></div>'
+                     : `<div class="check" onclick="cycle('${x.id}')" title="click to cycle status"></div>`;
+  return `<div class="row">
+    <div class="time">${x.s||''}</div>
+    <div class="card ${x.p} ${x.fx?'fixed':''} ${isNow?'now':''} status-${x.st}">
+      <div class="barL"></div>
+      ${check}
+      <div class="main">
+        <div class="title"><span class="ttext" contenteditable data-id="${x.id}" data-field="t" onblur="editTxt(this)">${x.t}</span>${tags}</div>
+        <div class="meta" contenteditable data-id="${x.id}" data-field="n" onblur="editTxt(this)">${x.n||''}</div>
+      </div>
+      <div class="est">${fmtEst(x.est)}</div>
+    </div></div>`;
+}
+
+function render(){
+  buildTabs();
+  document.getElementById('unsaved').textContent = Object.keys(OV).length ? '● unsaved local edits — Export to save' : '';
+  const isToday = active===todayKey;
+  const now = isToday ? (new Date().getHours()*60+new Date().getMinutes()) : null;
+  const list=document.getElementById('list');
+  const banner=document.getElementById('nowBanner');
+  const progFill=document.getElementById('progFill'), progLbl=document.getElementById('progLbl');
+
+  if(active==='prompts'){
+    banner.style.display='none'; progFill.style.width='0%'; progLbl.textContent='Ready-to-fire prompts';
+    list.innerHTML = PROMPTS.map((p,i)=>
+      `<div class="pcard"><h3>${p.h}</h3><pre>${p.body.replace(/</g,'&lt;')}</pre>
+        <button class="btn" id="cp${i}" onclick="copyText(${i})">📋 Copy</button></div>`).join('')
+      + `<div class="empty" style="margin-top:8px">Paste any of these to your Copilot session to run the routine.</div>`;
+    return;
+  }
+  if(active==='backlog'){
+    const bl=(D.backlog||[]).map(mt);
+    list.innerHTML = bl.length? bl.map(x=>rowHTML({...x,s:'',e:'',fx:0},null)).join('')
+      : '<div class="empty">Backlog is empty 🎉</div>';
+    progFill.style.width='0%'; progLbl.textContent=`${bl.length} backlog item(s)`;
+    banner.style.display='none';
+    return;
+  }
+  banner.style.display='';
+  const tasks=D.days[active].tasks.map(mt);
+  let html=tasks.map(x=>rowHTML(x,now)).join('');
+  const bl=(D.backlog||[]).map(mt).filter(x=>x.st!=='done');
+  if(bl.length){
+    html+=`<div class="spare">🗂 Spare time / backlog — start these if a slot opens up</div>`;
+    html+=bl.map(x=>rowHTML({...x,s:'',e:'',fx:0},null)).join('');
+  }
+  list.innerHTML=html;
+  const st=dayStats(tasks);
+  const pct = st.total? Math.round(st.done/st.total*100):0;
+  progFill.style.width=pct+'%';
+  progLbl.textContent=`${st.done}/${st.total} done · ${pct}%`;
+
+  if(isToday){
+    const d=new Date();const hh=String(d.getHours()).padStart(2,'0'),mm=String(d.getMinutes()).padStart(2,'0');
+    const cur=tasks.find(x=>!x.fx&&x.s&&now>=mins(x.s)&&now<mins(x.e)&&x.st!=='done')
+              || tasks.find(x=>x.fx&&x.s&&now>=mins(x.s)&&now<mins(x.e));
+    const next=tasks.find(x=>x.s&&mins(x.s)>now);
+    let msg=`🕐 Now ${hh}:${mm} — `;
+    msg += cur?`<b>${cur.t}</b>${cur.e?` (until ${cur.e})`:''}`:'between slots';
+    if(next)msg+=` · next: ${next.s} ${next.t}`;
+    banner.innerHTML=msg;
+  } else {
+    banner.innerHTML=`Viewing ${active} (${st.total-st.done} task(s) remaining)`;
+  }
+}
+function sel(k){active=k;render()}
+render();
+setInterval(()=>{ if(active===todayKey && !document.querySelector('[contenteditable]:focus')) render(); }, 60000);
+</script>
+</body>
+</html>
