@@ -63,9 +63,19 @@
   .status-in_progress .check::after{content:'▶';font-size:9px}
   .status-waiting .check{border-color:var(--wait)}
   .status-waiting .check::after{content:'…';color:var(--wait)}
+  /* fixed-slot (meeting/lunch/etc) indicator: clearly "occurred" vs "cancelled" */
+  .fcheck{flex:0 0 20px;height:20px;border-radius:6px;border:2px solid var(--line);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+  .card.fixed.status-done .fcheck{background:var(--done);border-color:var(--done);color:#0f1115}
+  .card.fixed.status-done .fcheck::after{content:'✓'}
+  .card.fixed.status-cancelled .fcheck{border-color:var(--p1);color:var(--p1)}
+  .card.fixed.status-cancelled .fcheck::after{content:'✕'}
   .main{flex:1;min-width:0}
   .title{font-weight:600}
-  .status-done .title{text-decoration:line-through;color:var(--muted)}
+  /* strike-through ONLY for completed non-fixed tasks, or cancelled items */
+  .card:not(.fixed).status-done .title{text-decoration:line-through;color:var(--muted)}
+  .status-cancelled .title{text-decoration:line-through;color:var(--muted)}
+  .card.fixed.status-done .title{color:var(--done)}
   .meta{color:var(--muted);font-size:12.5px;margin-top:2px}
   .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:20px;margin-left:6px}
   .tag.P1{background:rgba(255,107,107,.15);color:var(--p1)}
@@ -73,6 +83,8 @@
   .tag.P3{background:rgba(122,162,255,.15);color:var(--p3)}
   .tag.wait{background:rgba(240,163,94,.15);color:var(--wait)}
   .tag.wip{background:rgba(91,140,255,.15);color:var(--prog)}
+  .tag.att{background:rgba(61,220,151,.15);color:var(--done)}
+  .tag.cancel{background:rgba(255,107,107,.15);color:var(--p1)}
   .est{flex:0 0 auto;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
   .empty{color:var(--muted);font-size:13px;padding:18px;text-align:center;
     border:1px dashed var(--line);border-radius:12px}
@@ -173,11 +185,13 @@ function applyEdit(id,field,val){
 function setOv(id,field,val){ applyEdit(id,field,val); }
 
 const ORDER=['pending','in_progress','done'];
+const FIXED_ORDER=['pending','done','cancelled'];   // meetings/lunch: occurred vs cancelled
 function cycle(id){
-  let cur='pending';
-  Object.values(D.days).forEach(dz=>dz.tasks.forEach(t=>{if(t.id===id)cur=mt(t).st}));
-  (D.backlog||[]).forEach(t=>{if(t.id===id)cur=mt(t).st});
-  let i=ORDER.indexOf(cur); let next = i===-1 ? 'done' : ORDER[(i+1)%ORDER.length];
+  let cur='pending', fixed=false;
+  Object.values(D.days).forEach(dz=>dz.tasks.forEach(t=>{if(t.id===id){cur=mt(t).st;fixed=!!t.fx;}}));
+  (D.backlog||[]).forEach(t=>{if(t.id===id){cur=mt(t).st;fixed=!!t.fx;}});
+  const order = fixed ? FIXED_ORDER : ORDER;
+  let i=order.indexOf(cur); let next = i===-1 ? order[1] : order[(i+1)%order.length];
   applyEdit(id,'st',next);
 }
 function editTxt(el){
@@ -261,8 +275,11 @@ function rowHTML(x,now){
   let tags=`<span class="tag ${x.p}">${x.p}</span>`;
   if(x.st==='waiting')tags+='<span class="tag wait">waiting</span>';
   if(x.st==='in_progress')tags+='<span class="tag wip">WIP</span>';
-  const check = x.fx ? '<div style="width:20px"></div>'
-                     : `<div class="check" onclick="cycle('${x.id}')" title="click to cycle status"></div>`;
+  if(x.fx && x.st==='done')tags+='<span class="tag att">attended</span>';
+  if(x.st==='cancelled')tags+='<span class="tag cancel">cancelled</span>';
+  const check = x.fx
+    ? `<div class="fcheck" onclick="cycle('${x.id}')" title="click: attended → cancelled → upcoming"></div>`
+    : `<div class="check" onclick="cycle('${x.id}')" title="click to cycle status"></div>`;
   return `<div class="row">
     <div class="time">${x.s||''}</div>
     <div class="card ${x.p} ${x.fx?'fixed':''} ${isNow?'now':''} status-${x.st}">
