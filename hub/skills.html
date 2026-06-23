@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Skills</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -144,6 +147,10 @@ document.querySelectorAll('.filter-btn').forEach(b => b.addEventListener('click'
 }));
 document.getElementById('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeSkill(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSkill(); });
+
+// Always navigate back to a fresh hub page (defeat stale browser cache).
+const back = document.querySelector('.back'); if (back) back.href = '/?v=' + Date.now();
+window.addEventListener('pageshow', e => { if (e.persisted) location.reload(); });
 
 load();
 </script>

@@ -39,7 +39,7 @@
 
 <h1>🤖 My Automations</h1>
 <p class="subtitle">Click an automation to open its dashboard. <button id="e2e-btn" onclick="runAllE2E()" style="background:#cba6f7;color:#1e1e2e;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:600;font-size:13px;margin-left:12px">🧪 Run All E2E Tests</button></p>
-<div class="grid" id="grid"><a class="auto-card" href="skills.html" style="text-decoration:none;color:inherit"><h2>🧠 Skills <span class="server-badge online" style="background:rgba(203,166,247,0.15);color:#cba6f7">Dashboard</span></h2><div class="desc">Browse every Copilot skill available in all sessions — search, view, and copy prompts.</div><div class="schedule">⏰ Always on · ~/.copilot/skills/</div><div class="status"><span class="ok">Open skills dashboard →</span></div></a></div>
+<div class="grid" id="grid"><a class="auto-card" id="skills-card" href="skills.html" style="text-decoration:none;color:inherit"><h2>🧠 Skills <span class="server-badge online" style="background:rgba(203,166,247,0.15);color:#cba6f7">Dashboard</span></h2><div class="desc">Browse every Copilot skill available in all sessions — search, view, and copy prompts.</div><div class="schedule">⏰ Always on · ~/.copilot/skills/</div><div class="status"><span class="ok">Open skills dashboard →</span></div></a></div>
 <div class="empty" id="empty" style="display:none">No automations registered yet. Add entries to <code>automations.json</code>.</div>
 
 <p class="footer">Registry: <code>automations.json</code> · Skills dashboard: <a href="skills.html" style="color:#cba6f7">/skills.html</a> (live from <code>~/.copilot/skills/</code>)</p>
@@ -224,6 +224,9 @@ async function fetchLastRun(a) {
 
 load();
 
+// Always navigate to a fresh Skills page, and reload if restored from bfcache.
+(function(){ var sc=document.getElementById('skills-card'); if(sc) sc.href='skills.html?v='+Date.now(); })();
+window.addEventListener('pageshow', function(e){ if(e.persisted) location.reload(); });
 
 // E2E Test Runner
 async function runAllE2E() {
