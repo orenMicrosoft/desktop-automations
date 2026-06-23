@@ -33,28 +33,6 @@
     "health_path": "/dashboard.html"
   },
   {
-    "id": "pr-reviewer",
-    "name": "PR Reviewer",
-    "description": "AI-powered PR review — generate comments, edit inline, post directly to ADO",
-    "schedule": "On demand",
-    "dashboard": "http://localhost:8097/dashboard.html",
-    "port": 8097,
-    "folder": "pr-reviewer",
-    "cmd": ["pr_reviewer_server.py", "--no-browser"],
-    "health_path": "/api/health"
-  },
-  {
-    "id": "clawpilot-pr-reviews",
-    "name": "Clawpilot PR Reviews",
-    "description": "Library of PR reviews produced by Clawpilot's pr-review skill — interactive HTML artifacts with question-style findings, served from ~/.copilot/pr-reviews/",
-    "schedule": "On demand (Clawpilot generates artifacts; hub serves the library)",
-    "dashboard": "http://localhost:8765/index.html",
-    "port": 8765,
-    "folder": "clawpilot-pr-reviews",
-    "cmd": ["-m", "http.server", "8765", "--bind", "127.0.0.1"],
-    "health_path": "/index.html"
-  },
-  {
     "id": "course-workflow",
     "name": "Course Workflow",
     "description": "Course summarization pipeline — download materials, transcribe, generate Hebrew summaries, export to OneNote",
