@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skills</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #1e1e2e; color: #cdd6f4; padding: 32px; min-height: 100vh; }
+  a.back { color: #89b4fa; text-decoration: none; font-size: 13px; }
+  a.back:hover { text-decoration: underline; }
+  h1 { color: #cba6f7; margin: 8px 0 4px; font-size: 28px; }
+  .subtitle { color: #6c7086; margin-bottom: 20px; font-size: 14px; }
+  .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  #search { background: #313244; border: 1px solid #45475a; border-radius: 8px; color: #cdd6f4; padding: 8px 12px; font-size: 13px; width: 320px; outline: none; }
+  #search:focus { border-color: #89b4fa; }
+  .count { color: #6c7086; font-size: 12px; }
+  .filter-btn { background: #313244; border: 1px solid #45475a; color: #a6adc8; border-radius: 8px; padding: 6px 12px; font-size: 12.5px; cursor: pointer; }
+  .filter-btn.active { background: rgba(137,180,250,0.15); color: #89b4fa; border-color: #89b4fa; }
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; align-items: center; gap: 14px; background: #313244; border-radius: 10px; padding: 10px 16px; }
+  .row .ic { font-size: 20px; flex: 0 0 26px; text-align: center; }
+  .row .meta { flex: 0 0 230px; min-width: 0; }
+  .row .nm { font-weight: 600; color: #cdd6f4; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .desc { flex: 1 1 auto; color: #a6adc8; font-size: 12.5px; line-height: 1.45; min-width: 0; }
+  .row .acts { flex: 0 0 auto; white-space: nowrap; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 600; margin-top: 3px; }
+  .badge.auto { background: rgba(137,180,250,0.15); color: #89b4fa; }
+  .badge.prompt { background: rgba(203,166,247,0.15); color: #cba6f7; }
+  .btn { border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; font-weight: 600; font-size: 12.5px; }
+  .btn.view { background: #45475a; color: #cdd6f4; }
+  .btn.copy { background: #cba6f7; color: #1e1e2e; margin-left: 6px; }
+  .empty { color: #6c7086; text-align: center; padding: 60px; font-size: 15px; }
+  .footer { color: #45475a; font-size: 12px; text-align: center; margin-top: 40px; }
+  /* modal */
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000; display: none; align-items: center; justify-content: center; }
+  #modal .box { background: #313244; border: 1px solid #45475a; border-radius: 12px; padding: 24px; max-width: 820px; width: 90%; max-height: 82vh; overflow-y: auto; }
+  #modal h2 { color: #cba6f7; margin-bottom: 4px; }
+  #modal .mmeta { font-size: 11px; color: #585b70; margin-bottom: 14px; word-break: break-all; }
+  #modal pre { white-space: pre-wrap; font-family: 'Cascadia Code', Consolas, monospace; font-size: 12.5px; line-height: 1.55; color: #cdd6f4; background: #1e1e2e; border: 1px solid #45475a; border-radius: 8px; padding: 16px; margin: 0; }
+  #modal .x { float: right; background: none; border: none; color: #6c7086; font-size: 20px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<a class="back" href="/">← Back to Automations</a>
+<h1>🧠 Skills</h1>
+<p class="subtitle">Auto-loaded Copilot skills from <code>~/.copilot/skills/</code> — available in every Copilot session and listed here for review.</p>
+
+<div class="toolbar">
+  <input id="search" type="text" placeholder="🔎 Filter skills by name or description…">
+  <button class="filter-btn active" data-f="all">All</button>
+  <button class="filter-btn" data-f="copilot-cli">Auto · session</button>
+  <button class="filter-btn" data-f="prompt">Prompt</button>
+  <span class="count" id="count"></span>
+</div>
+
+<div class="list" id="list"></div>
+<div class="empty" id="empty" style="display:none"></div>
+
+<p class="footer">Live from <code>/api/skills</code> · source of truth: <code>~/.copilot/skills/</code></p>
+
+<div id="modal">
+  <div class="box">
+    <button class="x" onclick="closeSkill()">&times;</button>
+    <h2 id="m-title"></h2>
+    <div class="mmeta" id="m-meta"></div>
+    <pre id="m-body"></pre>
+  </div>
+</div>
+
+<script>
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+let SKILLS = [];
+let FILTER = 'all';
+
+async function load() {
+  try {
+    let skills;
+    try {
+      const r = await fetch('/api/skills?t=' + Date.now());
+      if (!r.ok) throw new Error('api');
+      skills = await r.json();
+    } catch (_) {
+      skills = await (await fetch('skills.json?t=' + Date.now())).json();
+      skills.forEach(s => { s.source = s.source || 'prompt'; s.has_prompt = !!s.prompt; });
+    }
+    skills.sort((a,b) => (a.has_prompt===b.has_prompt) ? a.name.localeCompare(b.name) : (a.has_prompt?-1:1));
+    SKILLS = skills;
+    render();
+  } catch (e) {
+    document.getElementById('list').innerHTML = '<div class="empty">Error loading skills: ' + e.message + '</div>';
+  }
+}
+
+function render() {
+  const list = document.getElementById('list');
+  const empty = document.getElementById('empty');
+  const q = (document.getElementById('search').value || '').toLowerCase();
+  const items = SKILLS.filter(s =>
+    (FILTER === 'all' || s.source === FILTER) &&
+    (!q || s.name.toLowerCase().includes(q) || (s.description||'').toLowerCase().includes(q)));
+  document.getElementById('count').textContent = items.length + ' / ' + SKILLS.length + ' skills';
+  list.innerHTML = '';
+  if (!items.length) { empty.style.display = 'block'; empty.textContent = 'No skills match.'; return; }
+  empty.style.display = 'none';
+  items.forEach(s => {
+    const idx = SKILLS.indexOf(s);
+    const auto = s.source === 'copilot-cli';
+    const row = document.createElement('div');
+    row.className = 'row';
+    let acts = `<button class="btn view" data-idx="${idx}">📄 View</button>`;
+    if (s.has_prompt) acts += `<button class="btn copy" data-idx="${idx}">📋 Copy</button>`;
+    row.innerHTML = `
+      <span class="ic">${s.icon || '🧠'}</span>
+      <div class="meta">
+        <div class="nm">${esc(s.name)}</div>
+        <span class="badge ${auto?'auto':'prompt'}">${auto?'Auto · session':'Prompt'}</span>
+      </div>
+      <div class="desc">${esc(s.description)}</div>
+      <div class="acts">${acts}</div>`;
+    const c = row.querySelector('.copy');
+    if (c) c.addEventListener('click', () => {
+      navigator.clipboard.writeText(s.prompt).then(() => { const o=c.textContent; c.textContent='✓ Copied'; setTimeout(()=>c.textContent=o,1200); });
+    });
+    row.querySelector('.view').addEventListener('click', () => openSkill(idx));
+    list.appendChild(row);
+  });
+}
+
+function openSkill(idx) {
+  const s = SKILLS[idx]; if (!s) return;
+  document.getElementById('m-title').textContent = (s.icon || '🧠') + ' ' + s.name;
+  document.getElementById('m-meta').textContent = (s.source === 'copilot-cli' ? 'Auto-loaded every session · ' + (s.path || '') : 'Prompt skill');
+  document.getElementById('m-body').textContent = s.body || s.prompt || s.description || '';
+  document.getElementById('modal').style.display = 'flex';
+}
+function closeSkill() { document.getElementById('modal').style.display = 'none'; }
+
+document.getElementById('search').addEventListener('input', render);
+document.querySelectorAll('.filter-btn').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.filter-btn').forEach(x => x.classList.remove('active'));
+  b.classList.add('active'); FILTER = b.dataset.f; render();
+}));
+document.getElementById('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeSkill(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSkill(); });
+
+load();
+</script>
+</body>
+</html>

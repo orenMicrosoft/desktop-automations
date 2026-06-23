@@ -36,14 +36,10 @@
 
 <h1>🤖 My Automations</h1>
 <p class="subtitle">Click an automation to open its dashboard. <button id="e2e-btn" onclick="runAllE2E()" style="background:#cba6f7;color:#1e1e2e;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:600;font-size:13px;margin-left:12px">🧪 Run All E2E Tests</button></p>
-<div class="grid" id="grid"></div>
+<div class="grid" id="grid"><a class="auto-card" href="skills.html" style="text-decoration:none;color:inherit"><h2>🧠 Skills <span class="server-badge online" style="background:rgba(203,166,247,0.15);color:#cba6f7">Dashboard</span></h2><div class="desc">Browse every Copilot skill available in all sessions — search, view, and copy prompts.</div><div class="schedule">⏰ Always on · ~/.copilot/skills/</div><div class="status"><span class="ok">Open skills dashboard →</span></div></a></div>
 <div class="empty" id="empty" style="display:none">No automations registered yet. Add entries to <code>automations.json</code>.</div>
 
-<h1 style="font-size:22px;margin-top:40px">🧠 Skills</h1>
-<p class="subtitle">Auto-loaded Copilot skills (from <code>~/.copilot/skills/</code>) + prompt skills. Click <b>View</b> to read a skill, or <b>Copy</b> to paste a prompt into Copilot.</p>
-<div class="grid" id="skills-grid"></div>
-
-<p class="footer">Registry: <code>automations.json</code> · Skills: <code>~/.copilot/skills/</code> (live via <code>/api/skills</code>)</p>
+<p class="footer">Registry: <code>automations.json</code> · Skills dashboard: <a href="skills.html" style="color:#cba6f7">/skills.html</a> (live from <code>~/.copilot/skills/</code>)</p>
 
 <!-- E2E Test Modal -->
 <div id="e2e-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;display:none;align-items:center;justify-content:center">
@@ -53,16 +49,6 @@
     <div id="e2e-results" style="font-size:13px">
       <div style="color:#6c7086;text-align:center;padding:24px">⏳ Running tests across all automations...</div>
     </div>
-  </div>
-</div>
-
-<!-- Skill View Modal -->
-<div id="skill-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;display:none;align-items:center;justify-content:center">
-  <div style="background:#313244;border:1px solid #45475a;border-radius:12px;padding:24px;max-width:820px;width:90%;max-height:82vh;overflow-y:auto">
-    <button onclick="closeSkill()" style="float:right;background:none;border:none;color:#6c7086;font-size:20px;cursor:pointer">&times;</button>
-    <h2 id="skill-modal-title" style="color:#cba6f7;margin-bottom:4px"></h2>
-    <div id="skill-modal-meta" style="font-size:11px;color:#585b70;margin-bottom:14px;word-break:break-all"></div>
-    <pre id="skill-modal-body" style="white-space:pre-wrap;font-family:'Cascadia Code',Consolas,monospace;font-size:12.5px;line-height:1.55;color:#cdd6f4;background:#1e1e2e;border:1px solid #45475a;border-radius:8px;padding:16px;margin:0"></pre>
   </div>
 </div>
 
@@ -255,74 +241,6 @@ async function fetchLastRun(a) {
 
 load();
 
-// ── Skills (Copilot CLI skills + prompt skills, from /api/skills) ──────────
-function escapeHtml(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-let SKILLS_CACHE = [];
-async function loadSkills() {
-  const grid = document.getElementById('skills-grid');
-  try {
-    let skills;
-    try {
-      const resp = await fetch('/api/skills?t=' + Date.now());
-      if (!resp.ok) throw new Error('api');
-      skills = await resp.json();
-    } catch (_) {
-      // Fallback to the static legacy file if the server endpoint isn't up yet.
-      skills = await (await fetch('skills.json?t=' + Date.now())).json();
-      skills.forEach(s => { s.source = s.source || 'prompt'; s.has_prompt = !!s.prompt; });
-    }
-    SKILLS_CACHE = skills;
-    if (!skills.length) { grid.innerHTML = '<div class="empty">No skills found in ~/.copilot/skills/.</div>'; return; }
-    // Prompt skills first, then auto skills, each alphabetical.
-    skills.sort((a,b) => (a.has_prompt===b.has_prompt) ? a.name.localeCompare(b.name) : (a.has_prompt?-1:1));
-    grid.innerHTML = '';
-    grid.style.flexDirection = 'column';
-    grid.style.flexWrap = 'nowrap';
-    grid.style.gap = '8px';
-    skills.forEach((s, idx) => {
-      const auto = s.source === 'copilot-cli';
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:14px;background:#313244;border-radius:10px;padding:10px 16px;width:100%';
-      const badge = auto
-        ? '<span class="server-badge online" style="background:rgba(137,180,250,0.15);color:#89b4fa">Auto · session</span>'
-        : '<span class="server-badge online" style="background:rgba(203,166,247,0.15);color:#cba6f7">Prompt</span>';
-      let buttons = `<button class="view-skill"
-          style="background:#45475a;color:#cdd6f4;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:600;font-size:12.5px">📄 View</button>`;
-      if (s.has_prompt) {
-        buttons += ` <button class="copy-skill"
-          style="background:#cba6f7;color:#1e1e2e;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:600;font-size:12.5px;margin-left:6px">📋 Copy</button>`;
-      }
-      row.innerHTML = `
-        <span style="font-size:20px;flex:0 0 24px;text-align:center">${s.icon || '🧠'}</span>
-        <div style="flex:0 0 220px;min-width:0">
-          <div style="font-weight:600;color:#cdd6f4;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.name)}</div>
-          <div style="margin-top:2px">${badge}</div>
-        </div>
-        <div style="flex:1 1 auto;color:#a6adc8;font-size:12.5px;line-height:1.45;min-width:0">${escapeHtml(s.description)}</div>
-        <div style="flex:0 0 auto;white-space:nowrap">${buttons}</div>`;
-      const cp = row.querySelector('.copy-skill');
-      if (cp) cp.addEventListener('click', () => {
-        navigator.clipboard.writeText(s.prompt).then(() => {
-          const o = cp.textContent; cp.textContent = '✓ Copied'; setTimeout(() => cp.textContent = o, 1200);
-        });
-      });
-      row.querySelector('.view-skill').addEventListener('click', () => openSkill(idx));
-      grid.appendChild(row);
-    });
-  } catch (e) {
-    grid.innerHTML = '<div class="empty">Error loading skills: ' + e.message + '</div>';
-  }
-}
-function openSkill(idx) {
-  const s = SKILLS_CACHE[idx]; if (!s) return;
-  document.getElementById('skill-modal-title').textContent = (s.icon || '🧠') + ' ' + s.name;
-  const body = s.body || s.prompt || s.description || '';
-  document.getElementById('skill-modal-meta').textContent = (s.source === 'copilot-cli' ? 'Auto-loaded every session · ' + (s.path || '') : 'Prompt skill');
-  document.getElementById('skill-modal-body').textContent = body;
-  document.getElementById('skill-modal').style.display = 'flex';
-}
-function closeSkill() { document.getElementById('skill-modal').style.display = 'none'; }
-loadSkills();
 
 // E2E Test Runner
 async function runAllE2E() {
