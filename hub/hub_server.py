@@ -219,6 +219,12 @@ def _parse_frontmatter(text):
 def get_all_skills():
     """Catalog every Copilot CLI skill in ~/.copilot/skills plus any legacy
     prompt skills in skills.json. Single source of truth = the skills folder."""
+    # Fallback icons for bundled/vendor skills that don't declare an `icon:`
+    # in their frontmatter (so we don't have to edit vendor-managed files).
+    default_icons = {
+        "docx": "📄", "pptx": "📊", "xlsx": "📈", "loop": "🔁",
+        "excalidraw": "✏️", "expense-report": "🧾", "web-artifacts-builder": "🌐",
+    }
     skills = []
     seen = set()
     if os.path.isdir(COPILOT_SKILLS_DIR):
@@ -234,10 +240,11 @@ def get_all_skills():
             meta, body = _parse_frontmatter(text)
             sid = meta.get("name", name)
             seen.add(sid)
+            icon = meta.get("icon") or default_icons.get(name) or default_icons.get(sid) or "🧠"
             skills.append({
                 "id": sid,
                 "name": meta.get("name", name),
-                "icon": meta.get("icon", "🧠"),
+                "icon": icon,
                 "description": meta.get("description", ""),
                 "prompt": meta.get("prompt", ""),
                 "has_prompt": bool(meta.get("prompt")),
@@ -264,6 +271,12 @@ def get_all_skills():
 class HubHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args):
         pass
+
+    def end_headers(self):
+        # Never let the browser cache the hub UI or API responses, so skill
+        # changes show up on a normal reload (no hard-refresh needed).
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        super().end_headers()
 
     def handle(self):
         try:
