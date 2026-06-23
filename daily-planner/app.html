@@ -85,6 +85,15 @@
   .tag.wip{background:rgba(91,140,255,.15);color:var(--prog)}
   .tag.att{background:rgba(61,220,151,.15);color:var(--done)}
   .tag.cancel{background:rgba(255,107,107,.15);color:var(--p1)}
+  .links{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;align-items:center}
+  .linkchip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;text-decoration:none;
+    background:#1b2230;border:1px solid var(--line);color:#9fc1ff;border-radius:7px;padding:2px 8px}
+  .linkchip:hover{border-color:var(--now)}
+  .rmlink{color:#586074;font-size:10px;cursor:pointer;margin-left:1px}
+  .rmlink:hover{color:var(--p1)}
+  .addlink{background:transparent;border:1px dashed var(--line);color:#586074;border-radius:7px;
+    font-size:11px;padding:2px 8px;cursor:pointer}
+  .addlink:hover{border-color:var(--now);color:var(--txt)}
   .est{flex:0 0 auto;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
   .empty{color:var(--muted);font-size:13px;padding:18px;text-align:center;
     border:1px dashed var(--line);border-radius:12px}
@@ -198,6 +207,28 @@ function editTxt(el){
   const id=el.getAttribute('data-id'), field=el.getAttribute('data-field');
   applyEdit(id,field,el.textContent.trim());
 }
+function getTask(id){ let r=null; findTask(id,t=>r=mt(t)); return r; }
+function linkMeta(u){
+  const s=(u||'').toLowerCase();
+  if(s.includes('pullrequest') || /github\.com\/.+\/pull\//.test(s)) return {icon:'🔀',type:'PR'};
+  if(s.includes('_build') || s.includes('/_release') || s.includes('pipeline')) return {icon:'🚀',type:'Pipeline'};
+  if(s.includes('_workitems') || s.includes('/workitems/') || /\/edit\/\d+/.test(s)) return {icon:'📋',type:'Work item'};
+  if(s.includes('portal.microsofticm') || s.includes('icm.')) return {icon:'🚨',type:'ICM'};
+  return {icon:'🔗',type:'Link'};
+}
+function addLink(id){
+  const u=prompt('Paste a link (ADO work item / task / pipeline / PR / ICM / any URL):');
+  if(!u) return;
+  let url=u.trim(); if(!/^https?:\/\//i.test(url)) url='https://'+url;
+  const label=(prompt('Label (optional — leave blank to auto-name):')||'').trim();
+  const cur=(getTask(id).links)||[];
+  applyEdit(id,'links',cur.concat([{u:url,t:label}]));
+}
+function removeLink(ev,id,idx){
+  ev.preventDefault(); ev.stopPropagation();
+  const cur=(getTask(id).links)||[];
+  applyEdit(id,'links',cur.filter((_,i)=>i!==idx));
+}
 function exportData(){
   const out={updated:D.updated,examNote:D.examNote,days:{},backlog:(D.backlog||[]).map(mt)};
   Object.keys(D.days).forEach(k=>out.days[k]={tasks:D.days[k].tasks.map(mt)});
@@ -288,6 +319,7 @@ function rowHTML(x,now){
       <div class="main">
         <div class="title"><span class="ttext" contenteditable data-id="${x.id}" data-field="t" onblur="editTxt(this)">${x.t}</span>${tags}</div>
         <div class="meta" contenteditable data-id="${x.id}" data-field="n" onblur="editTxt(this)">${x.n||''}</div>
+        <div class="links">${(x.links||[]).map((l,i)=>{const m=linkMeta(l.u);return `<a class="linkchip" href="${l.u}" target="_blank" rel="noopener" title="${l.u}">${m.icon} ${l.t||m.type}<span class="rmlink" onclick="removeLink(event,'${x.id}',${i})">✕</span></a>`;}).join('')}<button class="addlink" onclick="addLink('${x.id}')">+ link</button></div>
       </div>
       <div class="est">${fmtEst(x.est)}</div>
     </div></div>`;

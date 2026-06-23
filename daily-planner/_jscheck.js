@@ -33,7 +33,7 @@ const ctx = {
   fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) }),
   navigator: { clipboard: { writeText: () => Promise.resolve() } },
   setInterval: () => 0, setTimeout: () => 0, clearInterval: () => {},
-  confirm: () => true, alert: () => {},
+  confirm: () => true, alert: () => {}, prompt: () => 'https://msazure.visualstudio.com/One/_workitems/edit/12345',
   location: { protocol: 'http:', host: 'localhost:8101' },
   URL: { createObjectURL: () => 'blob:x' }, Blob: function () {},
 };
@@ -53,8 +53,11 @@ try {
   ctx.sel(k);
   const id = days[k].tasks[0].id;
   ctx.cycle(id);                 // exercise click-to-cycle + autosave path
+  ctx.addLink(id);               // attach a link (uses stubbed prompt)
+  if (!(days[k].tasks.find(t => t.id === id).links || []).length) throw new Error('addLink did not attach');
+  ctx.removeLink({ preventDefault() {}, stopPropagation() {} }, id, 0);
   ctx.gotoToday();
-  console.log('JS_OK views=today,backlog,prompts');
+  console.log('JS_OK views=today,backlog,prompts links=ok');
 } catch (e) {
   console.log('JS_FAIL: ' + (e && e.message ? e.message : e));
   process.exit(1);
