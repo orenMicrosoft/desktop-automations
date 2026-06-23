@@ -20,7 +20,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
-        if self.path in ("/", ""):
+        if self.path.split("?")[0] in ("/", ""):
             self.path = "/app.html"
         return super().do_GET()
 
@@ -51,7 +51,13 @@ if __name__ == "__main__":
     for a in sys.argv[1:]:
         if a.isdigit():
             PORT = int(a)
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("127.0.0.1", PORT), Handler) as httpd:
+    # Threaded server so one slow/open connection (browser keep-alive, a hub
+    # health check, etc.) can never wedge the single request loop and make the
+    # planner appear "down".
+    class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+        daemon_threads = True
+        allow_reuse_address = True
+
+    with ThreadingHTTPServer(("127.0.0.1", PORT), Handler) as httpd:
         print(f"Daily Planner running at http://localhost:{PORT}/")
         httpd.serve_forever()
