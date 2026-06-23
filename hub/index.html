@@ -276,32 +276,38 @@ async function loadSkills() {
     // Prompt skills first, then auto skills, each alphabetical.
     skills.sort((a,b) => (a.has_prompt===b.has_prompt) ? a.name.localeCompare(b.name) : (a.has_prompt?-1:1));
     grid.innerHTML = '';
+    grid.style.flexDirection = 'column';
+    grid.style.flexWrap = 'nowrap';
+    grid.style.gap = '8px';
     skills.forEach((s, idx) => {
-      const card = document.createElement('div');
-      card.className = 'auto-card';
-      card.style.cursor = 'default';
       const auto = s.source === 'copilot-cli';
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:14px;background:#313244;border-radius:10px;padding:10px 16px;width:100%';
       const badge = auto
         ? '<span class="server-badge online" style="background:rgba(137,180,250,0.15);color:#89b4fa">Auto · session</span>'
         : '<span class="server-badge online" style="background:rgba(203,166,247,0.15);color:#cba6f7">Prompt</span>';
-      let buttons = `<button class="view-skill" data-idx="${idx}"
-          style="background:#45475a;color:#cdd6f4;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:600;font-size:13px">📄 View</button>`;
+      let buttons = `<button class="view-skill"
+          style="background:#45475a;color:#cdd6f4;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:600;font-size:12.5px">📄 View</button>`;
       if (s.has_prompt) {
-        buttons += ` <button class="copy-skill" data-idx="${idx}"
-          style="background:#cba6f7;color:#1e1e2e;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:600;font-size:13px;margin-left:6px">📋 Copy prompt</button>`;
+        buttons += ` <button class="copy-skill"
+          style="background:#cba6f7;color:#1e1e2e;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:600;font-size:12.5px;margin-left:6px">📋 Copy</button>`;
       }
-      card.innerHTML = `
-        <h2>${s.icon || '🧠'} ${escapeHtml(s.name)} ${badge}</h2>
-        <div class="desc">${escapeHtml(s.description)}</div>
-        <div class="status">${buttons}</div>`;
-      const cp = card.querySelector('.copy-skill');
+      row.innerHTML = `
+        <span style="font-size:20px;flex:0 0 24px;text-align:center">${s.icon || '🧠'}</span>
+        <div style="flex:0 0 220px;min-width:0">
+          <div style="font-weight:600;color:#cdd6f4;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.name)}</div>
+          <div style="margin-top:2px">${badge}</div>
+        </div>
+        <div style="flex:1 1 auto;color:#a6adc8;font-size:12.5px;line-height:1.45;min-width:0">${escapeHtml(s.description)}</div>
+        <div style="flex:0 0 auto;white-space:nowrap">${buttons}</div>`;
+      const cp = row.querySelector('.copy-skill');
       if (cp) cp.addEventListener('click', () => {
         navigator.clipboard.writeText(s.prompt).then(() => {
           const o = cp.textContent; cp.textContent = '✓ Copied'; setTimeout(() => cp.textContent = o, 1200);
         });
       });
-      card.querySelector('.view-skill').addEventListener('click', () => openSkill(idx));
-      grid.appendChild(card);
+      row.querySelector('.view-skill').addEventListener('click', () => openSkill(idx));
+      grid.appendChild(row);
     });
   } catch (e) {
     grid.innerHTML = '<div class="empty">Error loading skills: ' + e.message + '</div>';
