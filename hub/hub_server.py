@@ -274,16 +274,17 @@ class HubHandler(http.server.SimpleHTTPRequestHandler):
             pass  # browser closed connection early — harmless
 
     def do_POST(self):
-        if self.path == "/api/start-all":
+        route = self.path.split("?")[0]   # ignore cache-busting query strings (?t=...)
+        if route == "/api/start-all":
             results = start_all_servers()
             self._json_response(results)
-        elif self.path.startswith("/api/start/"):
-            auto_id = self.path.split("/api/start/")[1]
+        elif route.startswith("/api/start/"):
+            auto_id = route.split("/api/start/")[1]
             ok, msg = start_server(auto_id)
             self._json_response({"ok": ok, "message": msg})
-        elif self.path == "/api/status":
+        elif route == "/api/status":
             self._json_response(get_all_status())
-        elif self.path == "/api/e2e-tests":
+        elif route == "/api/e2e-tests":
             import e2e_tests
             import importlib
             importlib.reload(e2e_tests)
@@ -293,9 +294,10 @@ class HubHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404)
 
     def do_GET(self):
-        if self.path == "/api/status":
+        route = self.path.split("?")[0]   # ignore cache-busting query strings (?t=...)
+        if route == "/api/status":
             self._json_response(get_all_status())
-        elif self.path == "/api/skills":
+        elif route == "/api/skills":
             self._json_response(get_all_skills())
         else:
             super().do_GET()
